@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "audio-inpaint"
+version = "0.1.0"
+description = ""
+authors = ["Philipp Seitz <philipp_seitz@outlook.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+numpy = "2.0"
+streamlit = "^1.40.2"
+matplotlib = "^3.9.3"
+watchdog = "^6.0.0"
+torch = [
+    { version = "^2.4.0+cu124", source = "pytorch-gpu", markers = "sys_platform == 'linux'" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.4.0-cp312-none-macosx_11_0_arm64.whl", markers = "sys_platform == 'darwin'" }
+]
+ffmpeg-python = "^0.2.0"
+
+[[tool.poetry.source]]
+name = "pytorch-gpu"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "explicit"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
