@@ -2,7 +2,7 @@
 name = "audio-inpaint"
 version = "0.1.0"
 description = ""
-authors = ["Philipp Seitz <philipp_seitz@outlook.com>"]
+authors = ["Philipp Seitz <phlippseitz@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -16,6 +16,11 @@ torch = [
     { url = "https://download.pytorch.org/whl/cpu/torch-2.4.0-cp312-none-macosx_11_0_arm64.whl", markers = "sys_platform == 'darwin'" }
 ]
 ffmpeg-python = "^0.2.0"
+llama-cpp-python = "^0.3.2"
+huggingface-hub = "^0.26.3"
+regex = "^2024.11.6"
+safetensors = "^0.4.5"
+transformers = "^4.46.3"
 
 [[tool.poetry.source]]
 name = "pytorch-gpu"
