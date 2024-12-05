@@ -1,7 +1,12 @@
-from llama_cpp import Llama
+from typing import Tuple
 import json
+from llama_cpp import Llama
+
 
 class LLM:
+    """
+    Llama Language Model for text editing tasks.
+    """
     def __init__(self):
         self.model = Llama.from_pretrained(
             repo_id="QuantFactory/Meta-Llama-3-8B-Instruct-GGUF", #"Qwen/Qwen2-0.5B-Instruct-GGUF",
@@ -10,7 +15,21 @@ class LLM:
             verbose=False
         )
 
-    def find_edit_substring(self, text: str, query: str):
+    def find_edit_substring(self, text: str, query: str) -> Tuple[str]:
+        """Queries LLM for the minimal subsequence in the original message that needs to be replaced and the text to replace it with.
+
+        Args:
+            text: original message
+            query: edit prompt
+
+        Raises:
+            ValueError: if the generated text cannot be parsed
+
+        Returns:
+            subseq_original: minimal subsequence in the original message that needs to be replaced
+            subseq_edited: text to replace the subsequence with
+        """
+
         prompt = (
             f"Given an original message and an edit prompt. Identify the minimal subsequence in the original message `subseq_original` that needs to be replaced and text `subseq_edited` to replace `subseq_original` with.\n"
             "Make sure that subseq_original is a contiguous substring of the original message.\n"
@@ -25,6 +44,7 @@ class LLM:
             f"Edit Prompt: '{query}'\n"
         )
         
+        # Use response format to enforce JSON output with specific schema
         output = self.model.create_chat_completion(
             messages=[
                 {
@@ -43,11 +63,9 @@ class LLM:
             },
             temperature=0.7,
         )
-        result = output["choices"][0]["message"]["content"]
-        print("Input:", text)
-        print("Output:", result)
-
+        
         try:
+            result = output["choices"][0]["message"]["content"]
             result = json.loads(result)
             return result["subseq_original"], result["subseq_edited"]
         except json.JSONDecodeError:

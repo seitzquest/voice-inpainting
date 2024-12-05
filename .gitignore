@@ -1,4 +1,3 @@
-*.wav
-.env
 poetry.lock
 __pycache__/
+data/
