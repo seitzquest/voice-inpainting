@@ -1,0 +1,59 @@
+direction: right
+
+classes: {
+  block: {
+    style: {
+      border-radius: 10
+    }
+  }
+}
+
+Inputs: {
+  class: block
+  style: {
+    fill: "#f4f1de"
+  }
+  VoiceMessageAudio: "Voice Message Audio"
+  EditPrompt: "Edit Prompt"
+}
+
+Transcription: {
+  class: block
+  style: {
+    fill: "#e07a5f"
+  }
+  OriginalText: "Whisper Transcript"
+  Timestamps: "Token Timestamps"
+}
+
+Text-Editing: {
+  class: block
+  style: {
+    fill: "#3d405b"
+  }
+  OriginalSubsequence: "Original Subsequence"
+  EditText: "LLaMa Edited Text"
+}
+
+Text-to-Speech: {
+  class: block
+  style: {
+    fill: "#f2cc8f"
+  }
+  EditAudio: "T5-TTS Synthesized Audio"
+}
+
+Outputs: {
+  class: block
+  style: {
+    fill: "#81b29a"
+  }
+  ModifiedAudio: Final Audio
+}
+
+Inputs.VoiceMessageAudio -> Transcription
+Transcription.OriginalText -> Text-Editing
+Inputs.EditPrompt -> Text-Editing
+Text-Editing.EditText -> Text-to-Speech
+Inputs.VoiceMessageAudio -> Outputs
+Text-to-Speech.EditAudio -> Outputs

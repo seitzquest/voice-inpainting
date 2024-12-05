@@ -10,7 +10,7 @@ packages = [
 ]
 
 [tool.poetry.scripts]
-streamlit-app = "src.main:main"
+demo = "src.main:main"
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
