@@ -4,7 +4,7 @@ Edit voice messages based on prompts by orchestrating Whisper for transcription,
 ![Architecture diagram](./architecture_diagram.svg)
 
 ## Setup
-The demo requires a access to the LLaMA 3 8B Instruct repository (can be requested on [HuggingFace](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)).
+The demo requires access to the LLaMA 3 8B Instruct repository (can be requested on [HuggingFace](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)).
 
 We use pip and poetry for package management:
 ```
