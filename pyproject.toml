@@ -1,40 +1,54 @@
-[tool.poetry]
+[project]
 name = "voice-inpainting"
 version = "0.1.0"
 description = ""
-authors = ["Philipp Seitz <phlippseitz@gmail.com>"]
+authors = [{ name = "Philipp Seitz", email = "phlippseitz@gmail.com" }]
+requires-python = ">=3.12,<3.13"
 readme = "README.md"
-
-packages = [
-    { include = "src" },
+dependencies = [
+    "numpy<=1.26.4",
+    "streamlit>=1.40.2,<2",
+    "matplotlib>=3.9.3,<4",
+    "watchdog>=6.0.0,<7",
+    "torch",
+    "ffmpeg-python>=0.2.0,<0.3",
+    "llama-cpp-python>=0.3.2,<0.4",
+    "huggingface-hub>=0.26.3,<0.27",
+    "regex>=2024.11.6,<2025",
+    "safetensors>=0.4.5,<0.5",
+    "transformers>=4.46.3,<5",
+    "loguru>=0.7.2,<0.8",
+    "soundfile>=0.13.1",
+    "pydub>=0.25.1",
+    "cached-path>=1.7.1",
+    "torchaudio>=2.4.0",
+    "f5-tts>=1.0.3",
+    "openai-whisper",
 ]
 
-[tool.poetry.scripts]
+[project.scripts]
 demo = "src.main:main"
 
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-numpy = "<=1.26.4"
-streamlit = "^1.40.2"
-matplotlib = "^3.9.3"
-watchdog = "^6.0.0"
-torch = [
-    { version = "^2.4.0+cu124", source = "pytorch-gpu", markers = "sys_platform != 'darwin'" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.4.0-cp312-none-macosx_11_0_arm64.whl", markers = "sys_platform == 'darwin'" }
-]
-ffmpeg-python = "^0.2.0"
-llama-cpp-python = "^0.3.2"
-huggingface-hub = "^0.26.3"
-regex = "^2024.11.6"
-safetensors = "^0.4.5"
-transformers = "^4.46.3"
-loguru = "^0.7.2"
+[tool.uv]
 
-[[tool.poetry.source]]
+[[tool.uv.index]]
 name = "pytorch-gpu"
 url = "https://download.pytorch.org/whl/cu124"
-priority = "explicit"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-gpu", marker = "sys_platform != 'darwin'" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.4.0-cp312-none-macosx_11_0_arm64.whl", marker = "sys_platform == 'darwin'" },
+]
+openai-whisper = { git = "https://github.com/openai/whisper" }
+
+[tool.hatch.build.targets.sdist]
+include = ["src"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

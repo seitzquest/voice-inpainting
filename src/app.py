@@ -11,7 +11,10 @@ st.title("Voice Inpainting")
 st.text("Demo for prompt-based voice message editing.")
 
 # Conditional rendering based on the choice
-audio_choice = st.radio("Choose how you want to provide the audio:", ("Record a voice message", "Upload a WAV file"))
+audio_choice = st.radio(
+    "Choose how you want to provide the audio:",
+    ("Record a voice message", "Upload a WAV file"),
+)
 uploaded_file, record_audio = None, None
 file_path = "data/input.wav"
 

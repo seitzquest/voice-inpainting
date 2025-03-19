@@ -1,6 +1,5 @@
 import subprocess
 import soundfile as sf
-import logging
 from loguru import logger
 
 from src.transcription import VoiceMessage
@@ -33,11 +32,11 @@ def voice_inpainting(edit_prompt: str, input_file: str, edit_file: str = "data/e
     # Generate the edited audio
     final_wave, final_sample_rate = F5TTS().infer(source_audio.path, source_audio.text, subseq_edited)
     sf.write(edit_file, final_wave, final_sample_rate)
-    logger.info(f"Generated audio for the edit.")
+    logger.info("Generated audio for the edit.")
 
     # Fuse the edited audio with the original audio
     source_audio.fuse_audio(start_index, end_index, edit_file, output_file)
-    logger.info(f"Audio editing complete.")
+    logger.info("Audio editing complete.")
 
 
 def main(verbose: bool = False):
