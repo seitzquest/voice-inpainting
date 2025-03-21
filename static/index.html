@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Inpainting</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .recording-animation {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        .audio-player {
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center">
+    <div class="container max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg mt-10">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-1">Voice Inpainting</h1>
+        <p class="text-center text-gray-600 mb-8">Demo for prompt-based voice message editing</p>
+
+        <div class="mb-8">
+            <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
+                <div class="flex items-center">
+                    <input type="radio" id="record" name="audioChoice" value="record" checked class="mr-2">
+                    <label for="record" class="text-gray-700">Record a voice message</label>
+                </div>
+                <div class="flex items-center">
+                    <input type="radio" id="upload" name="audioChoice" value="upload" class="mr-2">
+                    <label for="upload" class="text-gray-700">Upload a WAV file</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Record Section -->
+        <div id="recordSection" class="mb-6">
+            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
+                <button id="recordButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-full mb-4">
+                    Start Recording
+                </button>
+                <div id="recordingStatus" class="text-gray-700 hidden">
+                    <span class="recording-animation inline-block w-3 h-3 bg-red-500 rounded-full mr-2"></span>
+                    Recording... <span id="recordingTime">0:00</span>
+                </div>
+                <p id="recordingHelp" class="text-sm text-gray-500 mt-2">Click to start recording your voice message</p>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div id="uploadSection" class="mb-6 hidden">
+            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
+                <input type="file" id="fileUpload" accept=".wav" class="hidden">
+                <button id="uploadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-full mb-4">
+                    Choose WAV File
+                </button>
+                <p id="fileName" class="text-sm text-gray-700 mb-2 hidden"></p>
+                <p class="text-sm text-gray-500">Only WAV files are supported</p>
+            </div>
+        </div>
+
+        <!-- Audio Preview -->
+        <div id="audioPreview" class="mb-6 hidden">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Audio Preview:</h3>
+            <audio id="audioPlayer" controls class="audio-player"></audio>
+        </div>
+
+        <!-- Edit Section -->
+        <div id="editSection" class="mb-6 hidden">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Edit Prompt:</h3>
+            <textarea 
+                id="editPrompt" 
+                class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                rows="3" 
+                placeholder="Enter instructions to edit the audio (e.g., 'Remove background noise', 'Change word X to Y')"></textarea>
+            <button 
+                id="processButton" 
+                class="mt-4 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-full">
+                Process Audio
+            </button>
+        </div>
+
+        <!-- Result Section -->
+        <div id="resultSection" class="hidden">
+            <div class="bg-green-100 border-l-4 border-green-500 p-4 mb-4 rounded">
+                <p class="text-green-700">Audio processing complete!</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="border rounded-lg p-4 bg-gray-50">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Original Audio:</h3>
+                    <audio id="originalAudio" controls class="audio-player mb-2"></audio>
+                    <p id="originalPrompt" class="text-sm text-gray-600 italic"></p>
+                </div>
+                
+                <div class="border rounded-lg p-4 bg-gray-50">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Processed Audio:</h3>
+                    <audio id="processedAudio" controls class="audio-player mb-2"></audio>
+                    <p id="processingDetails" class="text-sm text-gray-600 italic"></p>
+                </div>
+            </div>
+            
+            <div class="bg-white border rounded-lg p-4 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">Processing Results:</h3>
+                <div id="processingResults" class="text-gray-700 whitespace-pre-wrap"></div>
+            </div>
+            
+            <div class="mt-4 flex justify-center space-x-4">
+                <button id="downloadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full">
+                    Download Processed Audio
+                </button>
+                <button id="compareButton" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-full">
+                    Compare A/B
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="hidden flex flex-col items-center justify-center py-8">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+            <p class="mt-4 text-gray-600">Processing your audio...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMessage" class="hidden bg-red-100 border-l-4 border-red-500 p-4 rounded">
+            <p class="text-red-700" id="errorText"></p>
+        </div>
+    </div>
+
+    <script>
+        // Audio conversion helper function
+        async function convertToWav(blob) {
+            return new Promise(async (resolve, reject) => {
+                try {
+                    // Create AudioContext
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Convert blob to array buffer
+                    const arrayBuffer = await blob.arrayBuffer();
+                    
+                    // Decode the audio data
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    
+                    // Create WAV file from audioBuffer
+                    const wavBuffer = audioBufferToWav(audioBuffer);
+                    
+                    // Create WAV blob
+                    const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+                    resolve(wavBlob);
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        }
+        
+        // Convert AudioBuffer to WAV format (PCM 16bit)
+        function audioBufferToWav(buffer) {
+            const numChannels = buffer.numberOfChannels;
+            const sampleRate = buffer.sampleRate;
+            const format = 1; // PCM
+            const bitDepth = 16;
+            
+            let result;
+            if (numChannels === 2) {
+                result = interleave(buffer.getChannelData(0), buffer.getChannelData(1));
+            } else {
+                result = buffer.getChannelData(0);
+            }
+            
+            return encodeWAV(result, format, sampleRate, numChannels, bitDepth);
+        }
+        
+        function interleave(leftChannel, rightChannel) {
+            const length = leftChannel.length + rightChannel.length;
+            const result = new Float32Array(length);
+            
+            let inputIndex = 0;
+            for (let i = 0; i < length; ) {
+                result[i++] = leftChannel[inputIndex];
+                result[i++] = rightChannel[inputIndex];
+                inputIndex++;
+            }
+            return result;
+        }
+        
+        function encodeWAV(samples, format, sampleRate, numChannels, bitDepth) {
+            const bytesPerSample = bitDepth / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            
+            const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+            const view = new DataView(buffer);
+            
+            // RIFF identifier
+            writeString(view, 0, 'RIFF');
+            // RIFF chunk length
+            view.setUint32(4, 36 + samples.length * bytesPerSample, true);
+            // RIFF type
+            writeString(view, 8, 'WAVE');
+            // format chunk identifier
+            writeString(view, 12, 'fmt ');
+            // format chunk length
+            view.setUint32(16, 16, true);
+            // sample format (raw)
+            view.setUint16(20, format, true);
+            // channel count
+            view.setUint16(22, numChannels, true);
+            // sample rate
+            view.setUint32(24, sampleRate, true);
+            // byte rate (sample rate * block align)
+            view.setUint32(28, sampleRate * blockAlign, true);
+            // block align (channel count * bytes per sample)
+            view.setUint16(32, blockAlign, true);
+            // bits per sample
+            view.setUint16(34, bitDepth, true);
+            // data chunk identifier
+            writeString(view, 36, 'data');
+            // data chunk length
+            view.setUint32(40, samples.length * bytesPerSample, true);
+            
+            // Write the PCM samples
+            const offset = 44;
+            if (bitDepth === 16) {
+                floatTo16BitPCM(view, offset, samples);
+            } else {
+                writeFloat32(view, offset, samples);
+            }
+            
+            return buffer;
+        }
+        
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+        
+        function floatTo16BitPCM(output, offset, input) {
+            for (let i = 0; i < input.length; i++, offset += 2) {
+                const s = Math.max(-1, Math.min(1, input[i]));
+                output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+        }
+        
+        function writeFloat32(output, offset, input) {
+            for (let i = 0; i < input.length; i++, offset += 4) {
+                output.setFloat32(offset, input[i], true);
+            }
+        }
+        // DOM Elements
+        const recordSection = document.getElementById('recordSection');
+        const uploadSection = document.getElementById('uploadSection');
+        const audioPreview = document.getElementById('audioPreview');
+        const editSection = document.getElementById('editSection');
+        const resultSection = document.getElementById('resultSection');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+        
+        const recordButton = document.getElementById('recordButton');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const recordingTime = document.getElementById('recordingTime');
+        const recordingHelp = document.getElementById('recordingHelp');
+        
+        const uploadButton = document.getElementById('uploadButton');
+        const fileUpload = document.getElementById('fileUpload');
+        const fileName = document.getElementById('fileName');
+        
+        const audioPlayer = document.getElementById('audioPlayer');
+        const processedAudio = document.getElementById('processedAudio');
+        const editPrompt = document.getElementById('editPrompt');
+        const processButton = document.getElementById('processButton');
+        const downloadButton = document.getElementById('downloadButton');
+
+        // Audio recording variables
+        let mediaRecorder;
+        let audioChunks = [];
+        let recordingInterval;
+        let recordingSeconds = 0;
+        let audioBlob = null;
+
+        // Switch between record and upload
+        document.querySelectorAll('input[name="audioChoice"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.value === 'record') {
+                    recordSection.classList.remove('hidden');
+                    uploadSection.classList.add('hidden');
+                } else {
+                    recordSection.classList.add('hidden');
+                    uploadSection.classList.remove('hidden');
+                }
+                resetUI();
+            });
+        });
+
+        // Recording functionality
+        recordButton.addEventListener('click', async function() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    startRecording(stream);
+                } catch (err) {
+                    showError('Microphone access denied or not available.');
+                    console.error('Error accessing microphone:', err);
+                }
+            }
+        });
+
+        function startRecording(stream) {
+            audioChunks = [];
+            recordingSeconds = 0;
+            
+            // Use higher quality audio encoding where available
+            const options = { mimeType: 'audio/webm;codecs=opus' };
+            try {
+                mediaRecorder = new MediaRecorder(stream, options);
+            } catch (e) {
+                console.log('MediaRecorder with specified options not supported, using default');
+                mediaRecorder = new MediaRecorder(stream);
+            }
+            
+            // Capture data more frequently for better quality
+            mediaRecorder.addEventListener('dataavailable', event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            });
+            
+            // Request data chunks every 250ms for smoother recording
+            mediaRecorder.start(250);
+            
+            mediaRecorder.addEventListener('stop', async () => {
+                // Create blob with proper MIME type (audio/wav is not correctly supported in all browsers)
+                audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                
+                // Convert webm to wav using a helper function
+                if (audioBlob.type === 'audio/webm') {
+                    try {
+                        // Use Web Audio API to properly convert to WAV
+                        const wavBlob = await convertToWav(audioBlob);
+                        audioBlob = wavBlob;
+                    } catch (err) {
+                        console.error('Error converting audio format:', err);
+                        // Continue with original blob if conversion fails
+                    }
+                }
+                
+                audioPlayer.src = URL.createObjectURL(audioBlob);
+                audioPreview.classList.remove('hidden');
+                editSection.classList.remove('hidden');
+                
+                recordButton.textContent = 'Start Recording';
+                recordButton.classList.remove('bg-red-500', 'hover:bg-red-600');
+                recordButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                recordingStatus.classList.add('hidden');
+                recordingHelp.textContent = 'Click to start recording your voice message';
+                
+                clearInterval(recordingInterval);
+            });
+            
+            // Start already called above
+            
+            recordButton.textContent = 'Stop Recording';
+            recordButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+            recordButton.classList.add('bg-red-500', 'hover:bg-red-600');
+            recordingStatus.classList.remove('hidden');
+            recordingHelp.textContent = 'Click to stop recording';
+            
+            recordingInterval = setInterval(() => {
+                recordingSeconds++;
+                const minutes = Math.floor(recordingSeconds / 60);
+                const seconds = recordingSeconds % 60;
+                recordingTime.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        }
+
+        // File upload functionality
+        uploadButton.addEventListener('click', function() {
+            fileUpload.click();
+        });
+
+        fileUpload.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                const file = this.files[0];
+                if (file.type !== 'audio/wav' && !file.name.endsWith('.wav')) {
+                    showError('Please upload a WAV file.');
+                    return;
+                }
+                
+                audioBlob = file;
+                fileName.textContent = file.name;
+                fileName.classList.remove('hidden');
+                
+                audioPlayer.src = URL.createObjectURL(file);
+                audioPreview.classList.remove('hidden');
+                editSection.classList.remove('hidden');
+            }
+        });
+
+        // Process audio
+        processButton.addEventListener('click', async function() {
+            if (!audioBlob) {
+                showError('No audio file available for processing.');
+                return;
+            }
+            
+            const prompt = editPrompt.value.trim();
+            if (!prompt) {
+                showError('Please enter an edit prompt.');
+                return;
+            }
+            
+            showLoading(true);
+            
+            try {
+                // Ensure we have a proper WAV file with correct filename extension
+                const formData = new FormData();
+                
+                // Create a File object from Blob with proper extension
+                const audioFile = new File([audioBlob], "input.wav", { 
+                    type: "audio/wav",
+                    lastModified: new Date().getTime()
+                });
+                
+                formData.append('audio', audioFile);
+                formData.append('prompt', prompt);
+                formData.append('return_metadata', 'true');  // Request JSON response
+                
+                // Log information about the file being sent
+                console.log("Sending file:", audioFile.name, audioFile.type, audioFile.size, "bytes");
+                
+                const response = await fetch('/api/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+                }
+                
+                // Check if response includes JSON metadata
+                let processedBlob;
+                let processingMetadata = {};
+                
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    // Handle JSON response with metadata
+                    processingMetadata = await response.json();
+                    
+                    if (processingMetadata.output_url) {
+                        // Fetch the audio file separately
+                        const audioResponse = await fetch(processingMetadata.output_url);
+                        processedBlob = await audioResponse.blob();
+                    } else {
+                        throw new Error('No output audio URL in response');
+                    }
+                } else {
+                    // Direct audio blob response
+                    processedBlob = await response.blob();
+                }
+                
+                // Update UI with original and processed audio
+                originalAudio.src = audioPlayer.src;
+                processedAudio.src = URL.createObjectURL(processedBlob);
+                
+                // Update text fields
+                originalPrompt.textContent = `Edit prompt: "${prompt}"`;
+                processingDetails.textContent = processingMetadata.processing_time ? 
+                    `Processing time: ${processingMetadata.processing_time.toFixed(2)}s` : '';
+                
+                // Show any detailed results
+                if (processingMetadata.details) {
+                    processingResults.textContent = typeof processingMetadata.details === 'string' ? 
+                        processingMetadata.details : JSON.stringify(processingMetadata.details, null, 2);
+                } else {
+                    processingResults.textContent = 'Audio processed successfully.';
+                }
+                
+                resultSection.classList.remove('hidden');
+                hideError();
+                
+                // Setup download button
+                downloadButton.onclick = function() {
+                    const a = document.createElement('a');
+                    a.href = processedAudio.src;
+                    a.download = 'processed_audio.wav';
+                    a.click();
+                };
+                
+                // Setup compare button for A/B testing
+                compareButton.onclick = function() {
+                    // Play original then processed for comparison
+                    originalAudio.play();
+                    originalAudio.onended = function() {
+                        setTimeout(() => processedAudio.play(), 500);
+                    };
+                };
+                
+            } catch (err) {
+                showError(`Error processing audio: ${err.message}`);
+                console.error('Processing error:', err);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        // Helper functions
+        function resetUI() {
+            audioPreview.classList.add('hidden');
+            editSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            hideError();
+            
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+            }
+            
+            audioBlob = null;
+            audioPlayer.src = '';
+            processedAudio.src = '';
+            editPrompt.value = '';
+            fileName.textContent = '';
+            fileName.classList.add('hidden');
+        }
+
+        function showLoading(show) {
+            if (show) {
+                loadingIndicator.classList.remove('hidden');
+                processButton.disabled = true;
+                processButton.classList.add('opacity-50');
+            } else {
+                loadingIndicator.classList.add('hidden');
+                processButton.disabled = false;
+                processButton.classList.remove('opacity-50');
+            }
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessage.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

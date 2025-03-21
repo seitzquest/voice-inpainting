@@ -7,12 +7,13 @@ class LLM:
     """
     Llama Language Model for text editing tasks.
     """
+
     def __init__(self):
         self.model = Llama.from_pretrained(
-            repo_id="QuantFactory/Meta-Llama-3-8B-Instruct-GGUF", #"Qwen/Qwen2-0.5B-Instruct-GGUF",
+            repo_id="QuantFactory/Meta-Llama-3-8B-Instruct-GGUF",
             filename="*Q8_0.gguf",
             chat_format="chatml",
-            verbose=False
+            verbose=False,
         )
 
     def find_edit_substring(self, text: str, query: str) -> Tuple[str]:
@@ -43,7 +44,7 @@ class LLM:
             f"Original Message: '{text}'\n"
             f"Edit Prompt: '{query}'\n"
         )
-        
+
         # Use response format to enforce JSON output with specific schema
         output = self.model.create_chat_completion(
             messages=[
@@ -57,13 +58,16 @@ class LLM:
                 "type": "json_object",
                 "schema": {
                     "type": "object",
-                    "properties": {"subseq_original": {"type": "string"}, "subseq_edited": {"type": "string"}},
+                    "properties": {
+                        "subseq_original": {"type": "string"},
+                        "subseq_edited": {"type": "string"},
+                    },
                     "required": ["subseq_original", "subseq_edited"],
                 },
             },
             temperature=0.7,
         )
-        
+
         try:
             result = output["choices"][0]["message"]["content"]
             result = json.loads(result)
@@ -71,4 +75,6 @@ class LLM:
         except json.JSONDecodeError:
             raise ValueError("Error parsing the generated text.")
         except KeyError:
-            raise ValueError("Expected keys `subseq_original` and `subseq_edited` are missing.")
+            raise ValueError(
+                "Expected keys `subseq_original` and `subseq_edited` are missing."
+            )

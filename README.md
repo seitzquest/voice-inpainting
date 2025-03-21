@@ -1,9 +1,11 @@
 # 🗣️ Voice Inpainting
+
 Edit voice messages based on prompts by orchestrating Whisper for transcription, LLaMA 3 8B Instruct for edit detection, and F5-TTS for audio generation.
 
 ![Architecture diagram](./architecture_diagram.svg)
 
 ## Setup
+
 The demo requires a access to the LLaMA 3 8B Instruct repository (can be requested on [HuggingFace](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)).
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer) for package management:
@@ -22,10 +24,10 @@ uv sync
 ## Run
 
 ```bash
-uv run demo
+uv run main.py
 ```
 
-# Architecture Diagram
+## Architecture Diagram
 
 The [architecture diagram](./architecture_diagram.svg) is defined using [D2](https://github.com/terrastruct/d2). Code to render the diagram:
 
