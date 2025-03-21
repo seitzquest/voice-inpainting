@@ -5,12 +5,12 @@ import numpy as np
 import soundfile as sf
 import torchaudio
 import torch
+from pydub import AudioSegment, silence
 from f5_tts.model import DiT
 from f5_tts.infer.utils_infer import (
     load_vocoder,
     load_model,
     infer_process,
-    remove_silence_for_generated_wav,
 )
 
 
@@ -67,6 +67,21 @@ class F5TTS:
             print(f"Warning: Could not check/resample audio: {e}")
             return audio_path
 
+    def _remove_silence_for_generated_wav(self, filename):
+        aseg = AudioSegment.from_file(filename)
+        non_silent_segs = silence.split_on_silence(
+            aseg,
+            min_silence_len=100,
+            silence_thresh=-50,
+            keep_silence=0,
+            seek_step=10,
+        )
+        non_silent_wave = AudioSegment.silent(duration=0)
+        for non_silent_seg in non_silent_segs:
+            non_silent_wave += non_silent_seg
+        aseg = non_silent_wave
+        aseg.export(filename, format="wav")
+
     def infer(
         self, ref_audio, ref_text, gen_text, remove_silence=True
     ) -> Tuple[np.ndarray, int]:
@@ -112,7 +127,7 @@ class F5TTS:
         if remove_silence:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
                 sf.write(f.name, final_wave, final_sample_rate)
-                remove_silence_for_generated_wav(f.name)
+                self._remove_silence_for_generated_wav(f.name)
                 # Load with the explicit sample rate
                 final_wave, loaded_sr = torchaudio.load(f.name, normalize=False)
 

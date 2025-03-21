@@ -1,13 +1,20 @@
-from typing import Tuple
+from typing import Tuple, List
 import string
+import numpy as np
+from scipy import signal
 from pydub import AudioSegment
 import whisper
+import torch
+from loguru import logger
+
+from .alignment import AudioAligner, AlignedWord
 
 
 class WordWithTimestamps:
     """
     A class to represent a word with a timestamp
     """
+
     def __init__(self, word, start, end):
         self.word = word
         self.start = start
@@ -16,23 +23,169 @@ class WordWithTimestamps:
     def __repr__(self):
         return f"{self.word} ({self.start:.2f}s - {self.end:.2f}s)"
 
+
 class VoiceMessage:
     """
     A class to represent a voice message (list of WordWithTimestamps)
     """
 
-    def __init__(self, path: str):
-        """Transcribes a voice message
+    def __init__(self, path: str, device="cpu"):
+        """Transcribes a voice message using Whisper for initial transcription,
+        then aligns with Wav2Vec2 for accurate word timestamps
 
         Args:
             path: path to the audio file
+            device: device to run the model on ("cpu", "cuda", or "mps")
         """
-        model = whisper.load_model("base", device="cpu")  # Use MPS for Apple Silicon
-        result = model.transcribe(path, word_timestamps=True)
+        # 1. Initial transcription with Whisper
+        logger.info(f"Loading Whisper model...")
+        whisper_model = whisper.load_model("base", device=device)
+
+        logger.info(f"Transcribing audio with Whisper...")
+        self.whisper_result = whisper_model.transcribe(
+            path,
+            word_timestamps=True,  # Get initial word timestamps
+            language="en",  # You can make this configurable
+        )
 
         self.path = path
-        self.text = result["text"]
-        self.word_list = [WordWithTimestamps(word["word"], word["start"], word["end"]) for segment in result["segments"] for word in segment["words"]]
+        self.text = self.whisper_result["text"]
+        logger.info(f"Initial transcription: {self.text}")
+
+        # Initial word list from Whisper (we'll refine this)
+        whisper_words = []
+        for segment in self.whisper_result["segments"]:
+            for word_data in segment["words"]:
+                whisper_words.append(
+                    WordWithTimestamps(
+                        word=word_data["word"].strip(),
+                        start=word_data["start"],
+                        end=word_data["end"],
+                    )
+                )
+
+        # 2. Refine timestamps with Wav2Vec2 alignment
+        logger.info(f"Refining word timestamps with Wav2Vec2 alignment...")
+        self._refine_timestamps_with_alignment(path, device)
+
+        # 3. Further refine with DSP
+        logger.info(f"Further refining timestamps with DSP...")
+        self._refine_timestamps_with_dsp(path)
+
+        logger.info(f"Transcription complete with {len(self.word_list)} words")
+
+    def _refine_timestamps_with_alignment(self, audio_path: str, device="cpu"):
+        """Refine word timestamps using Wav2Vec2 alignment
+
+        Args:
+            audio_path: path to the audio file
+            device: device to run the model on
+        """
+        try:
+            # Initialize the aligner
+            aligner = AudioAligner(language="en", device=device)
+
+            aligned_words = []
+
+            # Process each segment separately for better alignment
+            for segment in self.whisper_result["segments"]:
+                segment_text = segment["text"]
+                segment_start = segment["start"]
+                segment_end = segment["end"]
+
+                # Align this segment
+                aligned_segment = aligner.align_transcript(
+                    audio_path, segment_text, segment_start, segment_end
+                )
+
+                aligned_words.extend(aligned_segment)
+
+            # Convert aligned words to our format
+            self.word_list = [
+                WordWithTimestamps(word=word.word, start=word.start, end=word.end)
+                for word in aligned_words
+                if word.word.strip()
+            ]
+
+        except Exception as e:
+            # Fallback to Whisper timestamps if alignment fails
+            logger.error(f"Alignment failed: {e}. Falling back to Whisper timestamps.")
+            self.word_list = []
+            for segment in self.whisper_result["segments"]:
+                for word_data in segment["words"]:
+                    self.word_list.append(
+                        WordWithTimestamps(
+                            word=word_data["word"].strip(),
+                            start=word_data["start"],
+                            end=word_data["end"],
+                        )
+                    )
+
+    def _refine_timestamps_with_dsp(self, audio_path: str):
+        """Refine word timestamps using DSP methods for better boundaries
+
+        Args:
+            audio_path: path to the audio file
+        """
+        try:
+            # Load audio file
+            import soundfile as sf
+
+            audio, sample_rate = sf.read(audio_path)
+
+            # Convert to mono if stereo
+            if len(audio.shape) > 1:
+                audio = audio.mean(axis=1)
+
+            # Calculate energy envelope
+            window_size = int(0.01 * sample_rate)  # 10ms window
+            energy = np.array(
+                [
+                    np.sqrt(np.mean(audio[i : i + window_size] ** 2))
+                    for i in range(0, len(audio), window_size)
+                ]
+            )
+            time_points = np.arange(len(energy)) * (window_size / sample_rate)
+
+            # Smooth energy curve
+            energy_smooth = signal.medfilt(energy, kernel_size=5)
+
+            # Calculate adaptive silence threshold
+            silence_threshold = np.percentile(energy_smooth, 20) * 1.5
+
+            # Adjust each word's boundaries based on energy
+            for word in self.word_list:
+                # Find time indices closest to word boundaries
+                start_idx = np.argmin(np.abs(time_points - word.start))
+                end_idx = np.argmin(np.abs(time_points - word.end))
+
+                # Expand search windows
+                search_window_start = max(0, start_idx - 10)
+                search_window_end = min(len(energy_smooth) - 1, end_idx + 10)
+
+                # Find more precise word start (where energy rises above threshold)
+                for i in range(start_idx, search_window_start, -1):
+                    if energy_smooth[i] < silence_threshold:
+                        word.start = time_points[i + 1]
+                        break
+
+                # Find more precise word end (where energy falls below threshold)
+                for i in range(end_idx, search_window_end):
+                    if energy_smooth[i] < silence_threshold:
+                        word.end = time_points[i - 1]
+                        break
+
+            # Ensure no overlapping words
+            for i in range(1, len(self.word_list)):
+                if self.word_list[i].start < self.word_list[i - 1].end:
+                    # Find midpoint
+                    midpoint = (self.word_list[i - 1].end + self.word_list[i].start) / 2
+                    self.word_list[i - 1].end = midpoint
+                    self.word_list[i].start = midpoint
+
+            logger.info("Word timestamps refined using DSP")
+        except Exception as e:
+            logger.warning(f"Failed to refine timestamps with DSP: {e}")
 
     def __repr__(self):
         return "\n".join([word.__repr__() for word in self.word_list])
@@ -46,30 +199,79 @@ class VoiceMessage:
         Returns:
             Start and end indices of the subsequence in the voice message or -1, -1 if not found
         """
-        subsequence_words = subsequence.split() 
-        start_index = None
-        end_index = None
-        
-        word_sequence = [word.word.strip().lower() for word in self.word_list[:len(subsequence_words)]]
-        for i in range(len(self.word_list) - len(subsequence_words) + 1):
-            if word_sequence == subsequence_words:
-                start_index = i
-                end_index = i + len(subsequence_words) - 1
-                break  # We found the subsequence, so exit the loop
-            
-            if i + len(subsequence_words) == len(self.word_list):
-                break
+        # Clean subsequence and convert to lowercase for case-insensitive matching
+        subsequence = subsequence.lower().strip()
+        subsequence_words = [
+            word.strip().translate(str.maketrans("", "", string.punctuation))
+            for word in subsequence.split()
+        ]
 
-            word_sequence = word_sequence[1:]
-            word_sequence.append(self.word_list[i + len(subsequence_words)].word.strip().lower().translate(str.maketrans('', '', string.punctuation)))
+        # Prepare a cleaned version of our transcript words for matching
+        clean_word_list = [
+            word.word.lower()
+            .strip()
+            .translate(str.maketrans("", "", string.punctuation))
+            for word in self.word_list
+        ]
 
-        if start_index is None or end_index is None:
-            return -1, -1  # Return -1, -1 if no subsequence is found
-        
-        return start_index, end_index
+        # First, try exact subsequence match
+        for i in range(len(clean_word_list) - len(subsequence_words) + 1):
+            match = True
+            for j in range(len(subsequence_words)):
+                if clean_word_list[i + j] != subsequence_words[j]:
+                    match = False
+                    break
+            if match:
+                return i, i + len(subsequence_words) - 1
 
-    def fuse_audio(self, start_index: int, end_index: int, generated_audio_path: str, output_path: str) -> None:
-        """Fuse the voice message with second message and store to disk
+        # If exact match fails, try fuzzy matching (allow for small errors)
+        # This helps with transcription errors like "Navocado" vs "avocado"
+        from difflib import SequenceMatcher
+
+        for i in range(len(clean_word_list) - len(subsequence_words) + 1):
+            avg_ratio = 0
+            for j in range(len(subsequence_words)):
+                ratio = SequenceMatcher(
+                    None, clean_word_list[i + j], subsequence_words[j]
+                ).ratio()
+                avg_ratio += ratio
+
+            avg_ratio /= len(subsequence_words)
+            if avg_ratio > 0.8:  # 80% similarity threshold
+                return i, i + len(subsequence_words) - 1
+
+        # If still no match, try word-by-word fuzzy matching
+        best_match_idx = -1
+        best_match_score = 0
+
+        for i in range(len(clean_word_list) - len(subsequence_words) + 1):
+            total_score = 0
+            for j in range(len(subsequence_words)):
+                matcher = SequenceMatcher(
+                    None, clean_word_list[i + j], subsequence_words[j]
+                )
+                total_score += matcher.ratio()
+
+            avg_score = total_score / len(subsequence_words)
+            if (
+                avg_score > best_match_score and avg_score > 0.7
+            ):  # Higher threshold for single-word
+                best_match_score = avg_score
+                best_match_idx = i
+
+        if best_match_idx >= 0:
+            return best_match_idx, best_match_idx + len(subsequence_words) - 1
+
+        return -1, -1  # Return -1, -1 if no subsequence is found
+
+    def fuse_audio(
+        self,
+        start_index: int,
+        end_index: int,
+        generated_audio_path: str,
+        output_path: str,
+    ) -> None:
+        """Fuse the voice message with generated audio and store to disk
 
         Args:
             start_index: the start index of the subsequence to replace
@@ -80,16 +282,33 @@ class VoiceMessage:
         source_audio_segment = AudioSegment.from_wav(self.path)
         generated_audio_segment = AudioSegment.from_wav(generated_audio_path)
 
-        start_time, end_time = self.word_list[start_index].start, self.word_list[end_index].end
+        start_time, end_time = (
+            self.word_list[start_index].start,
+            self.word_list[end_index].end,
+        )
         start_time_ms, end_time_ms = int(start_time * 1000), int(end_time * 1000)
 
+        # Extract segments
         source_segment_before = source_audio_segment[:start_time_ms]
         source_segment_after = source_audio_segment[end_time_ms:]
 
-        # Apply fade-out and fade-in for smoothing
-        fade_duration_ms = 100  # Adjust as needed
-        source_segment_after = source_segment_after.fade_in(fade_duration_ms)
-        generated_audio_segment = generated_audio_segment.fade_out(fade_duration_ms)
+        # Apply gentle fades (very short duration)
+        fade_duration_ms = 20  # Use a fixed, very short fade duration (2ms)
+        logger.info(
+            f"Using fixed fade duration of {fade_duration_ms}ms for audio fusion"
+        )
 
-        final_audio = source_segment_before + generated_audio_segment + source_segment_after
+        source_segment_before = source_segment_before.fade_out(fade_duration_ms)
+        source_segment_after = source_segment_after.fade_in(fade_duration_ms)
+
+        # Match volumes for consistent audio level
+        target_dBFS = source_audio_segment.dBFS
+        gain_needed = target_dBFS - generated_audio_segment.dBFS
+        generated_audio_segment = generated_audio_segment.apply_gain(gain_needed)
+
+        # Simple concatenation with the minimal fade applied
+        final_audio = (
+            source_segment_before + generated_audio_segment + source_segment_after
+        )
+
         final_audio.export(output_path, format="wav")

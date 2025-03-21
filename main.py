@@ -1,22 +1,15 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 import uuid
 from typing import Optional
-import logging
+from loguru import logger
 import time
 
-# Import your voice inpainting function
 from src.main import voice_inpainting
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Voice Inpainting API")
 
@@ -32,7 +25,6 @@ app.add_middleware(
 # Create data directories if they don't exist
 os.makedirs("data/input", exist_ok=True)
 os.makedirs("data/output", exist_ok=True)
-os.makedirs("data/temp", exist_ok=True)
 
 
 # Clean up temporary files
