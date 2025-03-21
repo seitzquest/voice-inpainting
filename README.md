@@ -1,4 +1,4 @@
-# 🗣️ Voice Inpainting
+# 🎙️ Voice Inpainting
 
 Edit voice messages based on prompts by orchestrating Whisper for transcription, LLaMA 3 8B Instruct for edit detection, and F5-TTS for audio generation.
 

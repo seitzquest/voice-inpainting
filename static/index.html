@@ -1,30 +1,166 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Voice Inpainting</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <!-- Emoji Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
     <style>
+        /* Animation styles */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        .slide-in {
+            animation: slideIn 0.5s ease-out;
+        }
+        
+        .scale-in {
+            animation: scaleIn 0.3s ease-out;
+        }
+        
         .recording-animation {
             animation: pulse 1.5s infinite;
         }
-        @keyframes pulse {
-            0% { opacity: 0.5; }
-            50% { opacity: 1; }
-            100% { opacity: 0.5; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
+        
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes scaleIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.5; transform: scale(0.95); }
+            50% { opacity: 1; transform: scale(1.05); }
+            100% { opacity: 0.5; transform: scale(0.95); }
+        }
+        
+        /* Smoothing transitions */
+        .transition-all {
+            transition: all 0.3s ease;
+        }
+        
+        /* Audio player styling */
         .audio-player {
             width: 100%;
+            height: 50px;
+            border-radius: 9999px;
+        }
+
+        /* Dark mode styling */
+        .dark body {
+            background-color: #111827;
+            color: #f3f4f6;
+        }
+        
+        .dark .card {
+            background-color: #1f2937;
+            border-color: #374151;
+        }
+        
+        .dark .text-gray-800 {
+            color: #f3f4f6;
+        }
+        
+        .dark .text-gray-700 {
+            color: #e5e7eb;
+        }
+        
+        .dark .text-gray-600 {
+            color: #d1d5db;
+        }
+        
+        .dark .text-gray-500 {
+            color: #9ca3af;
+        }
+        
+        .dark .bg-white {
+            background-color: #1f2937;
+        }
+        
+        .dark .bg-gray-100 {
+            background-color: #111827;
+        }
+        
+        .dark .bg-gray-50 {
+            background-color: #374151;
+        }
+        
+        .dark .border-gray-300 {
+            border-color: #4b5563;
+        }
+        
+        .dark input, .dark textarea {
+            background-color: #374151;
+            color: #f3f4f6;
+            border-color: #4b5563;
+        }
+        
+        .dark input:focus, .dark textarea:focus {
+            border-color: #60a5fa;
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col items-center">
-    <div class="container max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg mt-10">
-        <h1 class="text-3xl font-bold text-center text-gray-800 mb-1">Voice Inpainting</h1>
-        <p class="text-center text-gray-600 mb-8">Demo for prompt-based voice message editing</p>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center transition-all">
+    <div class="container max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg mt-10 card transition-all">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 flex items-center">
+                <span class="mr-2">🎙️</span> Voice Inpainting
+            </h1>
+            <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
+                <svg id="lightIcon" class="w-6 h-6 text-gray-800 dark:text-gray-200 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>
+                <svg id="darkIcon" class="w-6 h-6 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                </svg>
+            </button>
+        </div>
 
-        <div class="mb-8">
+        <div id="progressBar" class="relative pt-1 mb-2">
+            <div class="flex mb-2 items-center justify-between">
+                <div>
+                    <span id="step1Label" class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200 dark:bg-blue-900 dark:text-blue-200">
+                        Record/Upload
+                    </span>
+                </div>
+                <div>
+                    <span id="step2Label" class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-gray-600 bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
+                        Edit
+                    </span>
+                </div>
+                <div>
+                    <span id="step3Label" class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-gray-600 bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
+                        Result
+                    </span>
+                </div>
+            </div>
+            <div class="flex h-2 mb-4 overflow-hidden text-xs bg-gray-200 rounded dark:bg-gray-700">
+                <div id="progressBarFill" style="width: 33.3%" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500 ease-out"></div>
+            </div>
+        </div>
+        
+        <div id="backButtonContainer" class="hidden mb-4 fade-in">
+            <button id="resetAudioButton" class="flex items-center text-gray-600 hover:text-blue-500 transition-all focus:outline-none">
+                <svg class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                <span class="text-sm">Change audio</span>
+            </button>
+        </div>
+
+        <div class="mb-8 slide-in">
             <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
                 <div class="flex items-center">
                     <input type="radio" id="record" name="audioChoice" value="record" checked class="mr-2">
@@ -38,10 +174,15 @@
         </div>
 
         <!-- Record Section -->
-        <div id="recordSection" class="mb-6">
-            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
-                <button id="recordButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-full mb-4">
-                    Start Recording
+        <div id="recordSection" class="mb-6 scale-in">
+            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg transition-all hover:border-blue-400">
+                <button id="recordButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full mb-4 transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                    <span class="flex items-center">
+                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                        </svg>
+                        Start Recording
+                    </span>
                 </button>
                 <div id="recordingStatus" class="text-gray-700 hidden">
                     <span class="recording-animation inline-block w-3 h-3 bg-red-500 rounded-full mr-2"></span>
@@ -52,10 +193,10 @@
         </div>
 
         <!-- Upload Section -->
-        <div id="uploadSection" class="mb-6 hidden">
-            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
+        <div id="uploadSection" class="mb-6 hidden scale-in">
+            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg transition-all hover:border-blue-400">
                 <input type="file" id="fileUpload" accept=".wav" class="hidden">
-                <button id="uploadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-full mb-4">
+                <button id="uploadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full mb-4 transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
                     Choose WAV File
                 </button>
                 <p id="fileName" class="text-sm text-gray-700 mb-2 hidden"></p>
@@ -64,70 +205,87 @@
         </div>
 
         <!-- Audio Preview -->
-        <div id="audioPreview" class="mb-6 hidden">
-            <h3 class="text-lg font-semibold text-gray-800 mb-2">Audio Preview:</h3>
+        <div id="audioPreview" class="mb-6 hidden fade-in">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-lg font-semibold text-gray-800">Audio Preview:</h3>
+            </div>
             <audio id="audioPlayer" controls class="audio-player"></audio>
         </div>
 
         <!-- Edit Section -->
-        <div id="editSection" class="mb-6 hidden">
+        <div id="editSection" class="mb-6 hidden slide-in">
             <h3 class="text-lg font-semibold text-gray-800 mb-2">Edit Prompt:</h3>
             <textarea 
                 id="editPrompt" 
-                class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
                 rows="3" 
                 placeholder="Enter instructions to edit the audio (e.g., 'Remove background noise', 'Change word X to Y')"></textarea>
-            <button 
-                id="processButton" 
-                class="mt-4 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-full">
-                Process Audio
-            </button>
+            <div class="flex justify-center mt-4">
+                <button 
+                    id="processButton" 
+                    class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-full transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
+                    Process Audio
+                </button>
+            </div>
         </div>
 
         <!-- Result Section -->
-        <div id="resultSection" class="hidden">
-            <div class="bg-green-100 border-l-4 border-green-500 p-4 mb-4 rounded">
-                <p class="text-green-700">Audio processing complete!</p>
-            </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div class="border rounded-lg p-4 bg-gray-50">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Original Audio:</h3>
-                    <audio id="originalAudio" controls class="audio-player mb-2"></audio>
-                    <p id="originalPrompt" class="text-sm text-gray-600 italic"></p>
-                </div>
-                
-                <div class="border rounded-lg p-4 bg-gray-50">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Processed Audio:</h3>
-                    <audio id="processedAudio" controls class="audio-player mb-2"></audio>
-                    <p id="processingDetails" class="text-sm text-gray-600 italic"></p>
+        <div id="resultSection" class="hidden fade-in">
+            <div class="bg-green-100 border-l-4 border-green-500 p-4 mb-6 rounded dark:bg-green-900 dark:border-green-700 scale-in">
+                <div class="flex items-center">
+                    <svg class="h-6 w-6 mr-2 text-green-500 dark:text-green-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    <p class="text-green-700 dark:text-green-200">Audio processing complete!</p>
                 </div>
             </div>
             
-            <div class="bg-white border rounded-lg p-4 mb-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-2">Processing Results:</h3>
-                <div id="processingResults" class="text-gray-700 whitespace-pre-wrap"></div>
+            <div class="border rounded-lg p-6 bg-gray-50 mb-6 card slide-in">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <svg class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                    </svg>
+                    Processed Audio:
+                </h3>
+                <audio id="processedAudio" controls class="audio-player mb-4"></audio>
+                <p id="processingDetails" class="text-sm text-gray-600 italic"></p>
+                <p id="editPromptDisplay" class="text-sm text-gray-600 mt-2"></p>
             </div>
             
-            <div class="mt-4 flex justify-center space-x-4">
-                <button id="downloadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full">
-                    Download Processed Audio
+            <div class="mt-6 flex justify-center space-x-4">
+                <button id="downloadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                    <span class="flex items-center">
+                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        Download
+                    </span>
                 </button>
-                <button id="compareButton" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-full">
-                    Compare A/B
+                <button id="startOverButton" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-full transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50">
+                    <span class="flex items-center">
+                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Start Over
+                    </span>
                 </button>
             </div>
         </div>
 
         <!-- Loading Indicator -->
-        <div id="loadingIndicator" class="hidden flex flex-col items-center justify-center py-8">
+        <div id="loadingIndicator" class="hidden flex flex-col items-center justify-center py-8 slide-in">
             <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
             <p class="mt-4 text-gray-600">Processing your audio...</p>
         </div>
 
         <!-- Error Message -->
-        <div id="errorMessage" class="hidden bg-red-100 border-l-4 border-red-500 p-4 rounded">
-            <p class="text-red-700" id="errorText"></p>
+        <div id="errorMessage" class="hidden bg-red-100 border-l-4 border-red-500 p-4 rounded dark:bg-red-900 dark:border-red-700 scale-in">
+            <div class="flex">
+                <svg class="h-6 w-6 mr-2 text-red-500 dark:text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <p id="errorText" class="text-red-700 dark:text-red-200"></p>
+            </div>
         </div>
     </div>
 
@@ -250,6 +408,7 @@
                 output.setFloat32(offset, input[i], true);
             }
         }
+
         // DOM Elements
         const recordSection = document.getElementById('recordSection');
         const uploadSection = document.getElementById('uploadSection');
@@ -272,8 +431,57 @@
         const audioPlayer = document.getElementById('audioPlayer');
         const processedAudio = document.getElementById('processedAudio');
         const editPrompt = document.getElementById('editPrompt');
+        const editPromptDisplay = document.getElementById('editPromptDisplay');
         const processButton = document.getElementById('processButton');
         const downloadButton = document.getElementById('downloadButton');
+        const resetAudioButton = document.getElementById('resetAudioButton');
+        const backToAudioButton = document.getElementById('backToAudioButton');
+        const startOverButton = document.getElementById('startOverButton');
+        
+        // Progress bar elements
+        const step1Label = document.getElementById('step1Label');
+        const step2Label = document.getElementById('step2Label');
+        const step3Label = document.getElementById('step3Label');
+        const progressBarFill = document.getElementById('progressBarFill');
+        
+        // Theme elements
+        const themeToggle = document.getElementById('themeToggle');
+        const lightIcon = document.getElementById('lightIcon');
+        const darkIcon = document.getElementById('darkIcon');
+        
+        // Theme toggle
+        themeToggle.addEventListener('click', function() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                darkIcon.classList.add('hidden');
+                lightIcon.classList.remove('hidden');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                lightIcon.classList.add('hidden');
+                darkIcon.classList.remove('hidden');
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+        
+        // Set initial theme based on localStorage or default to dark
+        function setInitialTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            
+            if (savedTheme === 'light') {
+                document.documentElement.classList.remove('dark');
+                darkIcon.classList.add('hidden');
+                lightIcon.classList.remove('hidden');
+            } else if (savedTheme === 'dark' || prefersDark || !savedTheme) {
+                document.documentElement.classList.add('dark');
+                lightIcon.classList.add('hidden');
+                darkIcon.classList.remove('hidden');
+            }
+        }
+        
+        setInitialTheme();
 
         // Audio recording variables
         let mediaRecorder;
@@ -281,6 +489,36 @@
         let recordingInterval;
         let recordingSeconds = 0;
         let audioBlob = null;
+
+        // Progress management
+        function updateProgress(step) {
+            // Reset all steps to inactive
+            [step1Label, step2Label, step3Label].forEach(el => {
+                el.classList.remove('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
+                el.classList.add('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
+            });
+            
+            // Set the active step
+            if (step >= 1) {
+                step1Label.classList.remove('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
+                step1Label.classList.add('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
+            }
+            
+            if (step >= 2) {
+                step2Label.classList.remove('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
+                step2Label.classList.add('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
+            }
+            
+            if (step >= 3) {
+                step3Label.classList.remove('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
+                step3Label.classList.add('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
+            }
+            
+            // Update progress bar
+            if (step === 1) progressBarFill.style.width = '33.3%';
+            if (step === 2) progressBarFill.style.width = '66.6%';
+            if (step === 3) progressBarFill.style.width = '100%';
+        }
 
         // Switch between record and upload
         document.querySelectorAll('input[name="audioChoice"]').forEach(radio => {
@@ -315,6 +553,9 @@
             audioChunks = [];
             recordingSeconds = 0;
             
+            // Immediately reset and display timer
+            recordingTime.textContent = "0:00";
+            
             // Use higher quality audio encoding where available
             const options = { mimeType: 'audio/webm;codecs=opus' };
             try {
@@ -335,7 +576,7 @@
             mediaRecorder.start(250);
             
             mediaRecorder.addEventListener('stop', async () => {
-                // Create blob with proper MIME type (audio/wav is not correctly supported in all browsers)
+                // Create blob with proper MIME type
                 audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 
                 // Convert webm to wav using a helper function
@@ -354,6 +595,13 @@
                 audioPreview.classList.remove('hidden');
                 editSection.classList.remove('hidden');
                 
+                // Hide first step components and update progress
+                recordSection.classList.add('hidden');
+                uploadSection.classList.add('hidden');
+                document.querySelector('.mb-8.slide-in').classList.add('hidden'); // Hide radio button choices
+                document.getElementById('backButtonContainer').classList.remove('hidden'); // Show back button
+                updateProgress(2);
+                
                 recordButton.textContent = 'Start Recording';
                 recordButton.classList.remove('bg-red-500', 'hover:bg-red-600');
                 recordButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
@@ -363,13 +611,15 @@
                 clearInterval(recordingInterval);
             });
             
-            // Start already called above
-            
             recordButton.textContent = 'Stop Recording';
             recordButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
             recordButton.classList.add('bg-red-500', 'hover:bg-red-600');
             recordingStatus.classList.remove('hidden');
             recordingHelp.textContent = 'Click to stop recording';
+            
+            // Reset and display timer immediately
+            recordingSeconds = 0;
+            recordingTime.textContent = "0:00";
             
             recordingInterval = setInterval(() => {
                 recordingSeconds++;
@@ -404,8 +654,60 @@
                 audioPlayer.src = URL.createObjectURL(file);
                 audioPreview.classList.remove('hidden');
                 editSection.classList.remove('hidden');
+                
+                // Hide first step components
+                recordSection.classList.add('hidden');
+                uploadSection.classList.add('hidden');
+                document.querySelector('.mb-8.slide-in').classList.add('hidden'); // Hide radio button choices
+                document.getElementById('backButtonContainer').classList.remove('hidden'); // Show back button
+                updateProgress(2);
             }
         });
+
+        // Reset buttons
+        resetAudioButton.addEventListener('click', function() {
+            resetToStep1();
+        });
+                
+        startOverButton.addEventListener('click', function() {
+            resetToStep1();
+        });
+        
+        function resetToStep1() {
+            // Hide all sections except the first step
+            audioPreview.classList.add('hidden');
+            editSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            document.getElementById('backButtonContainer').classList.add('hidden'); // Hide back button
+            hideError();
+            
+            // Reset recording if active
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+            }
+            
+            // Reset form elements
+            audioBlob = null;
+            audioPlayer.src = '';
+            processedAudio.src = '';
+            editPrompt.value = '';
+            fileName.textContent = '';
+            fileName.classList.add('hidden');
+            
+            // Show radio buttons for input method
+            document.querySelector('.mb-8.slide-in').classList.remove('hidden');
+            
+            // Show appropriate section based on selected input method
+            if (document.getElementById('record').checked) {
+                recordSection.classList.remove('hidden');
+                uploadSection.classList.add('hidden');
+            } else {
+                recordSection.classList.add('hidden');
+                uploadSection.classList.remove('hidden');
+            }
+            
+            updateProgress(1);
+        }
 
         // Process audio
         processButton.addEventListener('click', async function() {
@@ -469,24 +771,22 @@
                     processedBlob = await response.blob();
                 }
                 
-                // Update UI with original and processed audio
-                originalAudio.src = audioPlayer.src;
+                // Display just the processed audio
                 processedAudio.src = URL.createObjectURL(processedBlob);
                 
                 // Update text fields
-                originalPrompt.textContent = `Edit prompt: "${prompt}"`;
+                editPromptDisplay.textContent = `Edit prompt: "${prompt}"`;
                 processingDetails.textContent = processingMetadata.processing_time ? 
                     `Processing time: ${processingMetadata.processing_time.toFixed(2)}s` : '';
                 
-                // Show any detailed results
-                if (processingMetadata.details) {
-                    processingResults.textContent = typeof processingMetadata.details === 'string' ? 
-                        processingMetadata.details : JSON.stringify(processingMetadata.details, null, 2);
-                } else {
-                    processingResults.textContent = 'Audio processed successfully.';
-                }
+                // Hide sections
+                audioPreview.classList.add('hidden');
+                editSection.classList.add('hidden');
+                document.getElementById('backButtonContainer').classList.add('hidden'); // Hide back button
                 
+                // Show result section
                 resultSection.classList.remove('hidden');
+                updateProgress(3);
                 hideError();
                 
                 // Setup download button
@@ -495,15 +795,6 @@
                     a.href = processedAudio.src;
                     a.download = 'processed_audio.wav';
                     a.click();
-                };
-                
-                // Setup compare button for A/B testing
-                compareButton.onclick = function() {
-                    // Play original then processed for comparison
-                    originalAudio.play();
-                    originalAudio.onended = function() {
-                        setTimeout(() => processedAudio.play(), 500);
-                    };
                 };
                 
             } catch (err) {
@@ -531,6 +822,8 @@
             editPrompt.value = '';
             fileName.textContent = '';
             fileName.classList.add('hidden');
+            
+            updateProgress(1);
         }
 
         function showLoading(show) {
@@ -548,11 +841,19 @@
         function showError(message) {
             errorText.textContent = message;
             errorMessage.classList.remove('hidden');
+            
+            // Auto-hide error after 5 seconds
+            setTimeout(() => {
+                hideError();
+            }, 5000);
         }
 
         function hideError() {
             errorMessage.classList.add('hidden');
         }
+        
+        // Initialize the UI
+        updateProgress(1);
     </script>
 </body>
 </html>
