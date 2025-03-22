@@ -8,8 +8,14 @@ import uuid
 from typing import Optional
 from loguru import logger
 import time
+from dotenv import load_dotenv
 
 from src.main import voice_inpainting
+
+# Load HF token
+load_dotenv()
+if not os.environ.get("HF_TOKEN", False):
+    logger.warning("Warning: HF_TOKEN environment variable is not set")
 
 app = FastAPI(title="Voice Inpainting API")
 
