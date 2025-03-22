@@ -26,6 +26,7 @@ dependencies = [
     "torch>=2.4.0",
     "torchaudio>=2.4.0",
     "ctranslate2>=4.4.0",
+    "ipykernel>=6.29.5",
 ]
 
 [[tool.uv.index]]

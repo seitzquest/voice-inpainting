@@ -1,13 +1,12 @@
-from typing import Tuple, List
+from typing import Tuple
 import string
 import numpy as np
 from scipy import signal
 from pydub import AudioSegment
 import whisper
-import torch
 from loguru import logger
 
-from .alignment import AudioAligner, AlignedWord
+from .alignment import AudioAligner
 
 
 class WordWithTimestamps:
@@ -38,10 +37,10 @@ class VoiceMessage:
             device: device to run the model on ("cpu", "cuda", or "mps")
         """
         # 1. Initial transcription with Whisper
-        logger.info(f"Loading Whisper model...")
+        logger.info("Loading Whisper model...")
         whisper_model = whisper.load_model("base", device=device)
 
-        logger.info(f"Transcribing audio with Whisper...")
+        logger.info("Transcribing audio with Whisper...")
         self.whisper_result = whisper_model.transcribe(
             path,
             word_timestamps=True,  # Get initial word timestamps
@@ -65,11 +64,11 @@ class VoiceMessage:
                 )
 
         # 2. Refine timestamps with Wav2Vec2 alignment
-        logger.info(f"Refining word timestamps with Wav2Vec2 alignment...")
+        logger.info("Refining word timestamps with Wav2Vec2 alignment...")
         self._refine_timestamps_with_alignment(path, device)
 
         # 3. Further refine with DSP
-        logger.info(f"Further refining timestamps with DSP...")
+        logger.info("Further refining timestamps with DSP...")
         self._refine_timestamps_with_dsp(path)
 
         logger.info(f"Transcription complete with {len(self.word_list)} words")
@@ -270,45 +269,147 @@ class VoiceMessage:
         end_index: int,
         generated_audio_path: str,
         output_path: str,
+        fade_in_ms=10,
+        fade_out_ms=40,
+        overlap_ms=30,
+        eq_match=True,
     ) -> None:
-        """Fuse the voice message with generated audio and store to disk
+        """Fuse the voice message with generated audio and store to disk with advanced audio processing
 
         Args:
             start_index: the start index of the subsequence to replace
             end_index: the end index of the subsequence to replace
             generated_audio_path: path to the generated audio
             output_path: path to save the fused audio
+            fade_in_ms: duration of fade in (milliseconds)
+            fade_out_ms: duration of fade out (milliseconds)
+            overlap_ms: duration of overlap for crossfades (milliseconds)
+            eq_match: whether to apply EQ matching
         """
+        # Load audio segments
         source_audio_segment = AudioSegment.from_wav(self.path)
         generated_audio_segment = AudioSegment.from_wav(generated_audio_path)
 
+        # Get timestamps and convert to milliseconds
         start_time, end_time = (
             self.word_list[start_index].start,
             self.word_list[end_index].end,
         )
         start_time_ms, end_time_ms = int(start_time * 1000), int(end_time * 1000)
 
-        # Extract segments
-        source_segment_before = source_audio_segment[:start_time_ms]
-        source_segment_after = source_audio_segment[end_time_ms:]
-
-        # Apply gentle fades (very short duration)
-        fade_duration_ms = 20  # Use a fixed, very short fade duration (2ms)
-        logger.info(
-            f"Using fixed fade duration of {fade_duration_ms}ms for audio fusion"
+        # Calculate proper segment boundaries with offsets for smooth transitions
+        adjusted_start_ms = max(0, start_time_ms - (overlap_ms // 2))
+        adjusted_end_ms = min(
+            len(source_audio_segment), end_time_ms + (overlap_ms // 2)
         )
 
-        source_segment_before = source_segment_before.fade_out(fade_duration_ms)
-        source_segment_after = source_segment_after.fade_in(fade_duration_ms)
+        # Extract segments
+        source_segment_before = source_audio_segment[:adjusted_start_ms]
+        source_segment_after = source_audio_segment[adjusted_end_ms:]
 
         # Match volumes for consistent audio level
         target_dBFS = source_audio_segment.dBFS
         gain_needed = target_dBFS - generated_audio_segment.dBFS
         generated_audio_segment = generated_audio_segment.apply_gain(gain_needed)
 
-        # Simple concatenation with the minimal fade applied
-        final_audio = (
-            source_segment_before + generated_audio_segment + source_segment_after
-        )
+        # Apply EQ matching if requested
+        if eq_match:
+            try:
+                # Get a sample of the source audio near the edit point for reference
+                context_before = source_audio_segment[
+                    max(0, adjusted_start_ms - 500) : adjusted_start_ms
+                ]
 
+                # Basic EQ matching using low and high pass filters
+                # Low frequency adjustment
+                low_freq_source = context_before.low_pass_filter(300)
+                low_freq_gen = generated_audio_segment.low_pass_filter(300)
+
+                # High frequency adjustment
+                high_freq_source = context_before.high_pass_filter(3000)
+                high_freq_gen = generated_audio_segment.high_pass_filter(3000)
+
+                # Calculate relative levels and adjust
+                low_level_diff = low_freq_source.dBFS - low_freq_gen.dBFS
+                high_level_diff = high_freq_source.dBFS - high_freq_gen.dBFS
+
+                # Create modified low and high components
+                adjusted_low = generated_audio_segment.low_pass_filter(300).apply_gain(
+                    low_level_diff
+                )
+                adjusted_high = generated_audio_segment.high_pass_filter(
+                    3000
+                ).apply_gain(high_level_diff)
+
+                # Create mid component (by removing low and high)
+                mid_band = generated_audio_segment.overlay(
+                    adjusted_low.apply_gain(-10)
+                ).overlay(adjusted_high.apply_gain(-10))
+
+                # Blend components back together with appropriate levels
+                generated_audio_segment = adjusted_low.overlay(mid_band).overlay(
+                    adjusted_high
+                )
+
+                logger.info("Applied spectral EQ matching to generated audio")
+            except Exception as e:
+                logger.warning(f"EQ matching failed: {e}. Continuing without EQ.")
+
+        # Apply fades with precise timing
+        source_segment_before = source_segment_before.fade_out(fade_in_ms)
+        generated_audio_segment = generated_audio_segment.fade_in(fade_in_ms).fade_out(
+            fade_out_ms
+        )
+        source_after_with_fade = source_segment_after.fade_in(fade_out_ms)
+
+        # First crossfade: source_before + generated
+        position1 = len(source_segment_before) - overlap_ms
+        if position1 < 0:
+            # Handle case where the beginning segment is too short for overlap
+            logger.warning(
+                "Beginning segment too short for requested overlap. Reducing overlap."
+            )
+            position1 = 0
+            first_overlap = min(overlap_ms, len(source_segment_before))
+        else:
+            first_overlap = overlap_ms
+
+        # Create first join
+        fused1 = source_segment_before[:position1]
+        if first_overlap > 0:
+            overlap_segment1 = source_segment_before[position1:].overlay(
+                generated_audio_segment[:first_overlap]
+            )
+            fused1 += overlap_segment1
+            fused1 += generated_audio_segment[first_overlap:]
+        else:
+            fused1 += generated_audio_segment
+
+        # Second crossfade: result + source_after
+        position2 = len(fused1) - overlap_ms
+        if position2 < 0:
+            # Handle case where the middle segment is too short for overlap
+            logger.warning(
+                "Middle segment too short for requested overlap. Reducing overlap."
+            )
+            position2 = 0
+            second_overlap = min(overlap_ms, len(fused1))
+        else:
+            second_overlap = overlap_ms
+
+        # Create second join
+        final_audio = fused1[:position2]
+        if second_overlap > 0:
+            overlap_segment2 = fused1[position2:].overlay(
+                source_after_with_fade[:second_overlap]
+            )
+            final_audio += overlap_segment2
+            final_audio += source_after_with_fade[second_overlap:]
+        else:
+            final_audio += source_after_with_fade
+
+        # Export the final result
+        logger.info(
+            f"Exporting fused audio with fade_in={fade_in_ms}ms, fade_out={fade_out_ms}ms, overlap={overlap_ms}ms"
+        )
         final_audio.export(output_path, format="wav")
