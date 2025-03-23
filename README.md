@@ -1,6 +1,5 @@
 # Voice Inpainting
 
-
 Application for seamless voice message editing using natural language prompts.
 
 ## Overview
