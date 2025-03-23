@@ -7,8 +7,6 @@ Application for seamless voice message editing using natural language prompts.
 
 Voice Inpainting enables precise editing of speech recordings by operating directly on RVQ (Residual Vector Quantization) tokens rather than word-level timestamps, resulting in natural-sounding edits that preserve the speaker's voice characteristics.
 
-![Architecture diagram](./architecture_diagram.svg)
-
 ## Setup
 
 The demo requires HuggingFace access to:
@@ -36,6 +34,8 @@ uv run main.py
 ```
 
 ## Core Technology
+
+![Architecture diagram](./architecture_diagram.svg)
 
 - **RVQ Token Processing**: Works at the acoustic token level for higher fidelity edits
 - **Sesame CSM**: Generates natural speech while preserving voice characteristics 
