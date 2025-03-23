@@ -1,295 +1,969 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Voice Inpainting</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
-    <!-- Emoji Favicon -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 200 200%22><style>@media(prefers-color-scheme:dark){.gray{fill:%23B0B0B0}.green{fill:%239DB859}}@media(prefers-color-scheme:light){.gray{fill:%23333333}.green{fill:%235DA831}}.red{fill:%23FF5252}</style><rect rx=%225%22 ry=%225%22 x=%2211.5%22 y=%2265%22 width=%2215%22 height=%2270%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%2238.5%22 y=%2240.5%22 width=%2215%22 height=%22119%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%2265.5%22 y=%2263%22 width=%2215%22 height=%2274%22 class=%22red%22 /><rect rx=%225%22 ry=%225%22 x=%2292.5%22 y=%2262.5%22 width=%2215%22 height=%2275%22 class=%22green%22 /><rect rx=%225%22 ry=%225%22 x=%22119.5%22 y=%2233%22 width=%2215%22 height=%22134%22 class=%22green%22 /><rect rx=%225%22 ry=%225%22 x=%22146.5%22 y=%2269%22 width=%2215%22 height=%2262%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%22173.5%22 y=%2237.5%22 width=%2215%22 height=%22115%22 class=%22gray%22 /></svg>">
     <style>
-        /* Animation styles */
-        .fade-in {
-            animation: fadeIn 0.5s ease-in;
+        :root {
+            --color-primary: #5B6529; /* Green from CSS */
+            --color-primary-light: #9DB859; /* Lighter green */
+            --color-primary-dark: #404A1C; /* Darker green */
+            --color-secondary: #B8B435; /* Yellow-green from CSS */
+            --color-secondary-light: #E2E8CC; /* Light yellowish */
+            --color-secondary-dark: #848C28; /* Darker yellow */
+            --color-dark: #111111;
+            --color-light: #FFFFFF;
+            --color-gray: #E5E7EB;
+            --color-error: #B91C1C;
+            --transition-default: all 0.3s ease;
+            --shadow-subtle: 0 2px 15px 0 rgba(160, 160, 160, 0.15);
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+        }
+
+        /* Dark mode variables */
+        .dark {
+            --color-primary: #9DB859; /* Lighter green for dark mode */
+            --color-primary-light: #B8C97A; /* Even lighter green */
+            --color-primary-dark: #738033; /* Medium green */
+            --color-secondary: #738033; /* Secondary green for dark mode */
+            --color-secondary-light: #9DB859; /* Lighter green */
+            --color-secondary-dark: #404A1C; /* Darker green */
+            --color-dark: #F0F0F0;
+            --color-light: #1A1A1A;
+            --color-gray: #2D2D2D;
+            --shadow-subtle: 0 2px 15px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #F6F6F6; /* Light background from CSS */
+            color: var(--color-dark);
+            line-height: 1.5;
+            transition: var(--transition-default);
         }
         
-        .slide-in {
-            animation: slideIn 0.5s ease-out;
+        /* Apply transitions to all elements for consistency */
+        *, *::before, *::after {
+            transition: var(--transition-default);
+        }
+
+        .dark body {
+            background-color: #121212;
+        }
+
+        .app-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        .card {
+            background-color: var(--color-light);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-subtle);
+            overflow: hidden;
+            transition: var(--transition-default);
+        }
+
+        .dark .card {
+            background-color: #1E1E1E;
+            border: 1px solid #333;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-md);
+            transition: var(--transition-default);
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background-color: var(--color-primary);
+            color: var(--color-light);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--color-primary-light);
+        }
+
+        .btn-secondary {
+            background-color: var(--color-secondary);
+            color: var(--color-dark);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--color-secondary-dark);
+        }
+
+        .btn-danger {
+            background-color: var(--color-error);
+            color: var(--color-light);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .input-container {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+
+        textarea, input {
+            width: 100%;
+            padding: 1rem;
+            border: 1px solid var(--color-gray);
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            transition: var(--transition-default);
+            background-color: var(--color-light);
+            color: var(--color-dark);
+        }
+
+        .dark textarea, .dark input {
+            background-color: #2A2A2A;
+            border-color: #444;
+        }
+
+        textarea:focus, input:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 2px rgba(91, 101, 41, 0.2);
+        }
+
+        .progress-container {
+            display: flex;
+            margin-bottom: 2rem;
+        }
+
+        .progress-step {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+
+        .progress-step::before {
+            content: '';
+            position: absolute;
+            top: 1rem;
+            left: -50%;
+            width: 100%;
+            height: 2px;
+            background-color: var(--color-gray);
+            z-index: 0;
+        }
+
+        .progress-step:first-child::before {
+            display: none;
+        }
+
+        .progress-marker {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            background-color: var(--color-gray);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-dark);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            z-index: 1;
+            transition: var(--transition-default);
+        }
+
+        .progress-label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--color-dark);
+            opacity: 0.7;
+            transition: var(--transition-default);
+        }
+
+        .progress-step.active .progress-marker {
+            background-color: var(--color-primary);
+            color: var(--color-light);
+        }
+
+        .progress-step.active .progress-label {
+            color: var(--color-primary);
+            opacity: 1;
+        }
+
+        .progress-step.complete .progress-marker {
+            background-color: var(--color-primary-light);
+            color: var(--color-light);
+        }
+
+        .progress-step.complete::before {
+            background-color: var(--color-primary-light);
         }
         
-        .scale-in {
-            animation: scaleIn 0.3s ease-out;
+        /* New class for active line connection */
+        .progress-step.line-active::before {
+            background-color: var(--color-primary-light);
+        }
+
+        .drop-zone {
+            border: 2px dashed var(--color-gray);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            text-align: center;
+            transition: var(--transition-default);
+            cursor: pointer;
+            background-color: var(--color-light);
+        }
+
+        .dark .drop-zone {
+            background-color: #2A2A2A;
+            border-color: #444;
+        }
+
+        .drop-zone:hover {
+            border-color: var(--color-primary);
+            background-color: rgba(157, 184, 89, 0.1);
+        }
+
+        .dark .drop-zone:hover {
+            background-color: rgba(157, 184, 89, 0.25);
+        }
+
+        .audio-player {
+            width: 100%;
+            height: 50px;
+            border-radius: 9999px;
+            margin: 1rem 0;
+        }
+
+        .audio-player::-webkit-media-controls-panel {
+            background-color: rgba(226, 230, 212, 0.7);
+        }
+
+        .audio-player::-webkit-media-controls-play-button {
+            background-color: var(--color-primary);
+            border-radius: 50%;
+        }
+
+        /* Updated recording container and controls */
+        .recording-container-wrapper {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            margin: 1rem 0;
+            user-select: none; /* Prevent text selection/cursor */
+        }
+
+        .recording-container {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0.75rem;
+            background-color: var(--color-light);
+            border-radius: 9999px;
+            box-shadow: var(--shadow-subtle);
+            width: 100%;
+            max-width: 400px;
+            transition: all 0.3s ease;
+        }
+
+        .dark .recording-container {
+            background-color: #2A2A2A;
+            border: 1px solid #444;
         }
         
-        .recording-animation {
+        .recording-indicator {
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
+        .recording-pulse {
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            background-color: var(--color-error);
+            margin-right: 0.5rem;
             animation: pulse 1.5s infinite;
+            min-width: 0.75rem;
+        }
+
+        .recording-waveform {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            margin: 0 0.75rem;
+            flex-grow: 1;
+            cursor: default;
+            pointer-events: none; /* Prevent interaction with waveform */
+        }
+
+        .waveform-bar {
+            width: 3px;
+            height: 12px;
+            margin: 0 2px;
+            background-color: var(--color-primary-light);
+            border-radius: 1px;
         }
         
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        .recording-active .waveform-bar {
+            animation: waveform 1.5s ease-in-out infinite;
         }
-        
-        @keyframes slideIn {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+
+        /* Create different heights and delays for waveform bars */
+        .waveform-bar:nth-child(1) { animation-delay: 0.0s; }
+        .waveform-bar:nth-child(2) { animation-delay: 0.1s; height: 16px; }
+        .waveform-bar:nth-child(3) { animation-delay: 0.2s; height: 10px; }
+        .waveform-bar:nth-child(4) { animation-delay: 0.3s; height: 18px; }
+        .waveform-bar:nth-child(5) { animation-delay: 0.4s; height: 12px; }
+        .waveform-bar:nth-child(6) { animation-delay: 0.5s; height: 14px; }
+        .waveform-bar:nth-child(7) { animation-delay: 0.6s; height: 20px; }
+        .waveform-bar:nth-child(8) { animation-delay: 0.7s; height: 12px; }
+        .waveform-bar:nth-child(9) { animation-delay: 0.8s; height: 16px; }
+        .waveform-bar:nth-child(10) { animation-delay: 0.9s; height: 14px; }
+
+        @keyframes waveform {
+            0%, 100% { transform: scaleY(0.6); }
+            50% { transform: scaleY(1.1); }
         }
-        
-        @keyframes scaleIn {
-            from { transform: scale(0.9); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
+
+        .recording-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
         }
-        
+
+        .recording-time {
+            font-weight: 500;
+            color: var(--color-primary-dark);
+            min-width: 40px;
+            text-align: center;
+            margin-right: 8px;
+        }
+
+        .dark .recording-time {
+            color: var(--color-primary-light);
+        }
+
+        .control-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-btn {
+            background-color: transparent;
+            color: var(--color-error);
+            border: 1px solid var(--color-error);
+        }
+
+        .toggle-btn:hover {
+            transform: scale(1.1);
+            background-color: rgba(220, 38, 38, 0.1);
+        }
+
+        .toggle-btn.play {
+            color: var(--color-primary);
+            border-color: var(--color-primary);
+        }
+
+        .toggle-btn.play:hover {
+            background-color: rgba(91, 101, 41, 0.1);
+        }
+
+        .submit-btn {
+            background-color: var(--color-primary);
+            color: var(--color-light);
+            padding: 0 14px;
+            border-radius: 16px;
+            width: auto;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .submit-btn:hover {
+            transform: scale(1.03);
+            background-color: var(--color-primary-light);
+        }
+
+        .play-btn {
+            background-color: var(--color-primary);
+            color: var(--color-light);
+        }
+
+        .play-btn:hover {
+            transform: scale(1.1);
+            background-color: var(--color-primary-light);
+        }
+
+        .trash-btn {
+            background-color: #f87171;
+            color: var(--color-light);
+        }
+
+        .trash-btn:hover {
+            transform: scale(1.1);
+            background-color: #ef4444;
+        }
+
+        /* Preview recording container */
+        .preview-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+            background-color: var(--color-secondary-light);
+            border-radius: 9999px;
+            box-shadow: var(--shadow-subtle);
+            width: 100%;
+            max-width: 400px;
+            margin: 1rem auto;
+        }
+
+        .dark .preview-container {
+            background-color: #333;
+            border: 1px solid #444;
+        }
+
+        .preview-waveform {
+            display: flex;
+            align-items: center;
+            height: 32px;
+            flex-grow: 1;
+            margin: 0 0.75rem;
+        }
+
+        .preview-waveform-bar {
+            width: 3px;
+            height: 12px;
+            margin: 0 2px;
+            background-color: var(--color-primary-dark);
+            border-radius: 1px;
+        }
+
+        .preview-waveform-bar:nth-child(1) { height: 10px; }
+        .preview-waveform-bar:nth-child(2) { height: 14px; }
+        .preview-waveform-bar:nth-child(3) { height: 8px; }
+        .preview-waveform-bar:nth-child(4) { height: 16px; }
+        .preview-waveform-bar:nth-child(5) { height: 12px; }
+        .preview-waveform-bar:nth-child(6) { height: 18px; }
+        .preview-waveform-bar:nth-child(7) { height: 10px; }
+        .preview-waveform-bar:nth-child(8) { height: 14px; }
+        .preview-waveform-bar:nth-child(9) { height: 8px; }
+        .preview-waveform-bar:nth-child(10) { height: 12px; }
+
         @keyframes pulse {
             0% { opacity: 0.5; transform: scale(0.95); }
             50% { opacity: 1; transform: scale(1.05); }
             100% { opacity: 0.5; transform: scale(0.95); }
         }
-        
-        /* Smoothing transitions */
-        .transition-all {
-            transition: all 0.3s ease;
-        }
-        
-        /* Audio player styling */
-        .audio-player {
-            width: 100%;
-            height: 50px;
-            border-radius: 9999px;
+
+        /* Override transition for elements with animations */
+        .recording-pulse, 
+        .fade-in, 
+        .slide-in,
+        .loading-spinner,
+        .waveform-bar {
+            transition: none;
         }
 
-        /* Dark mode styling */
-        .dark body {
-            background-color: #111827;
-            color: #f3f4f6;
+        .fade-in {
+            animation: fadeIn 0.5s ease-in forwards;
         }
-        
+
+        .slide-in {
+            animation: slideIn 0.5s ease-out forwards;
+        }
+
+        /* Disable transitions for all SVG elements and text in header */
+        header h1 {
+            transition: color 0.15s ease !important;
+        }
+
+        /* Apply faster transitions specifically to text elements */
+        h1, h2, h3, h4, h5, h6, 
+        p, span, label, a, 
+        .progress-label, .section-heading, 
+        .text-gray-bars, .text-red-bar, .text-green-bar {
+            transition: color 0.15s ease !important;
+        }
+
+        /* Override the general transition with a more targeted approach */
+        html, *, *::before, *::after {
+            /* Modify the default transition variable to be more selective */
+            --transition-default: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        /* Keep smooth transitions only for UI components that benefit from them */
+        .card, .btn, textarea, input, 
+        .drop-zone, .progress-marker,
         .dark .card {
-            background-color: #1f2937;
-            border-color: #374151;
+            transition: var(--transition-default);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .section-heading {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--color-primary-dark);
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+
+        .radio-option input[type="radio"] {
+            appearance: none;
+            width: 1.25rem;
+            height: 1.25rem;
+            border: 2px solid var(--color-gray);
+            border-radius: 50%;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .radio-option input[type="radio"]:checked {
+            border-color: var(--color-primary);
+        }
+
+        .radio-option input[type="radio"]:checked::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 0.6rem;
+            height: 0.6rem;
+            background-color: var(--color-primary);
+            border-radius: 50%;
+        }
+
+        .error-message {
+            background-color: rgba(185, 28, 28, 0.1);
+            border-left: 4px solid var(--color-error);
+            color: var(--color-error);
+            padding: 1rem;
+            border-radius: var(--radius-sm);
+            margin-bottom: 1.5rem;
+        }
+
+        .success-message {
+            background-color: rgba(157, 184, 89, 0.15);
+            border-left: 4px solid var(--color-primary-light);
+            color: var(--color-primary-dark);
+            padding: 1rem;
+            border-radius: var(--radius-sm);
+            margin-bottom: 1.5rem;
         }
         
-        .dark .text-gray-800 {
-            color: #f3f4f6;
+        .dark .success-message {
+            background-color: rgba(157, 184, 89, 0.2);
+            color: var(--color-primary-light);
         }
-        
-        .dark .text-gray-700 {
-            color: #e5e7eb;
+
+        .loading-spinner {
+            border: 3px solid rgba(91, 101, 41, 0.2);
+            border-top: 3px solid var(--color-primary);
+            border-radius: 50%;
+            width: 2.5rem;
+            height: 2.5rem;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
         }
-        
-        .dark .text-gray-600 {
-            color: #d1d5db;
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
-        
-        .dark .text-gray-500 {
-            color: #9ca3af;
+
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--color-primary);
+            font-weight: 500;
+            transition: var(--transition-default);
+            cursor: pointer;
+            margin-bottom: 1rem;
         }
-        
-        .dark .bg-white {
-            background-color: #1f2937;
+
+        .back-button:hover {
+            color: var(--color-primary-light);
         }
-        
-        .dark .bg-gray-100 {
-            background-color: #111827;
+
+        .text-gray-bars {
+            color: var(--color-dark);
+            transition: var(--transition-default);
         }
-        
-        .dark .bg-gray-50 {
-            background-color: #374151;
+
+        .dark .text-gray-bars {
+            color: #B0B0B0;
         }
-        
-        .dark .border-gray-300 {
-            border-color: #4b5563;
+
+        .text-red-bar {
+            color: var(--color-error);
+            transition: var(--transition-default);
         }
-        
-        .dark input, .dark textarea {
-            background-color: #374151;
-            color: #f3f4f6;
-            border-color: #4b5563;
+
+        .text-green-bar {
+            color: #5DA831; /* Lighter green in light mode */
+            transition: var(--transition-default);
         }
-        
-        .dark input:focus, .dark textarea:focus {
-            border-color: #60a5fa;
+
+        .dark .text-green-bar {
+            color: var(--color-primary); /* Use primary color in dark mode */
+        }
+
+        .svg-logo {
+            transition: var(--transition-default);
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col items-center transition-all">
-    <div class="container max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg mt-10 card transition-all">
-        <div class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-800 flex items-center">
-                <span class="mr-2">🎙️</span> Voice Inpainting
-            </h1>
-            <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
-                <svg id="lightIcon" class="w-6 h-6 text-gray-800 dark:text-gray-200 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
-                </svg>
-                <svg id="darkIcon" class="w-6 h-6 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
-                </svg>
-            </button>
-        </div>
-
-        <div id="progressBar" class="relative pt-1 mb-2">
-            <div class="flex mb-2 items-center justify-between">
-                <div>
-                    <span id="step1Label" class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200 dark:bg-blue-900 dark:text-blue-200">
-                        Record/Upload
-                    </span>
-                </div>
-                <div>
-                    <span id="step2Label" class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-gray-600 bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
-                        Edit
-                    </span>
-                </div>
-                <div>
-                    <span id="step3Label" class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-gray-600 bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
-                        Result
-                    </span>
-                </div>
-            </div>
-            <div class="flex h-2 mb-4 overflow-hidden text-xs bg-gray-200 rounded dark:bg-gray-700">
-                <div id="progressBarFill" style="width: 33.3%" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500 ease-out"></div>
-            </div>
-        </div>
-        
-        <div id="backButtonContainer" class="hidden mb-4 fade-in">
-            <button id="resetAudioButton" class="flex items-center text-gray-600 hover:text-blue-500 transition-all focus:outline-none">
-                <svg class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                </svg>
-                <span class="text-sm">Change audio</span>
-            </button>
-        </div>
-
-        <div class="mb-8 slide-in">
-            <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
-                <div class="flex items-center">
-                    <input type="radio" id="record" name="audioChoice" value="record" checked class="mr-2">
-                    <label for="record" class="text-gray-700">Record a voice message</label>
-                </div>
-                <div class="flex items-center">
-                    <input type="radio" id="upload" name="audioChoice" value="upload" class="mr-2">
-                    <label for="upload" class="text-gray-700">Upload a WAV file</label>
-                </div>
-            </div>
-        </div>
-
-        <!-- Record Section -->
-        <div id="recordSection" class="mb-6 scale-in">
-            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg transition-all hover:border-blue-400">
-                <button id="recordButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full mb-4 transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
-                    <span class="flex items-center">
-                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+<body>
+    <div class="app-container">
+        <div class="card p-8">
+            <header class="flex justify-between items-center mb-8">
+                <h1 class="text-2xl font-bold flex items-center">
+                    <span class="mr-2 inline-flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="32" height="32" class="align-middle">
+                            <rect rx="5" ry="5" x="11.5" y="65" width="15" height="70" fill="currentColor" class="text-gray-bars" />
+                            <rect rx="5" ry="5" x="38.5" y="40.5" width="15" height="119" fill="currentColor" class="text-gray-bars" />
+                            <rect rx="5" ry="5" x="65.5" y="63" width="15" height="74" fill="currentColor" class="text-red-bar" />
+                            <rect rx="5" ry="5" x="92.5" y="62.5" width="15" height="75" fill="currentColor" class="text-green-bar" />
+                            <rect rx="5" ry="5" x="119.5" y="33" width="15" height="134" fill="currentColor" class="text-green-bar" />
+                            <rect rx="5" ry="5" x="146.5" y="69" width="15" height="62" fill="currentColor" class="text-gray-bars" />
+                            <rect rx="5" ry="5" x="173.5" y="37.5" width="15" height="115" fill="currentColor" class="text-gray-bars" />
                         </svg>
-                        Start Recording
-                    </span>
+                    </span> 
+                    Voice Inpainting
+                </h1>
+                <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
+                    <svg id="lightIcon" class="w-6 h-6 text-yellow-500 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    <svg id="darkIcon" class="w-6 h-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                    </svg>
                 </button>
-                <div id="recordingStatus" class="text-gray-700 hidden">
-                    <span class="recording-animation inline-block w-3 h-3 bg-red-500 rounded-full mr-2"></span>
-                    Recording... <span id="recordingTime">0:00</span>
+            </header>
+
+            <!-- Progress Indicator -->
+            <div class="progress-container mb-8">
+                <div class="progress-step active">
+                    <div class="progress-marker">1</div>
+                    <div class="progress-label">Record/Upload</div>
                 </div>
-                <p id="recordingHelp" class="text-sm text-gray-500 mt-2">Click to start recording your voice message</p>
+                <div class="progress-step">
+                    <div class="progress-marker">2</div>
+                    <div class="progress-label">Edit</div>
+                </div>
+                <div class="progress-step">
+                    <div class="progress-marker">3</div>
+                    <div class="progress-label">Result</div>
+                </div>
             </div>
-        </div>
 
-        <!-- Upload Section -->
-        <div id="uploadSection" class="mb-6 hidden scale-in">
-            <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg transition-all hover:border-blue-400">
-                <input type="file" id="fileUpload" accept=".wav" class="hidden">
-                <button id="uploadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full mb-4 transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
-                    Choose WAV File
-                </button>
-                <p id="fileName" class="text-sm text-gray-700 mb-2 hidden"></p>
-                <p class="text-sm text-gray-500">Only WAV files are supported</p>
-            </div>
-        </div>
-
-        <!-- Audio Preview -->
-        <div id="audioPreview" class="mb-6 hidden fade-in">
-            <div class="flex justify-between items-center mb-2">
-                <h3 class="text-lg font-semibold text-gray-800">Audio Preview:</h3>
-            </div>
-            <audio id="audioPlayer" controls class="audio-player"></audio>
-        </div>
-
-        <!-- Edit Section -->
-        <div id="editSection" class="mb-6 hidden slide-in">
-            <h3 class="text-lg font-semibold text-gray-800 mb-2">Edit Prompt:</h3>
-            <textarea 
-                id="editPrompt" 
-                class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
-                rows="3" 
-                placeholder="Enter instructions to edit the audio (e.g. 'Change word X to Y')"></textarea>
-            <div class="flex justify-center mt-4">
-                <button 
-                    id="processButton" 
-                    class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-full transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
-                    Process Audio
+            <!-- Back Button (Initially Hidden) -->
+            <div id="backButtonContainer" class="hidden fade-in">
+                <button id="resetAudioButton" class="back-button">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    <span>Change audio</span>
                 </button>
             </div>
-        </div>
 
-        <!-- Result Section -->
-        <div id="resultSection" class="hidden fade-in">
-            <div class="bg-green-100 border-l-4 border-green-500 p-4 mb-6 rounded dark:bg-green-900 dark:border-green-700 scale-in">
-                <div class="flex items-center">
-                    <svg class="h-6 w-6 mr-2 text-green-500 dark:text-green-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <!-- Input Method Selection -->
+            <div class="radio-group slide-in">
+                <label class="radio-option">
+                    <input type="radio" id="record" name="audioChoice" value="record" checked>
+                    <span>Record a voice message</span>
+                </label>
+                <label class="radio-option">
+                    <input type="radio" id="upload" name="audioChoice" value="upload">
+                    <span>Upload a WAV file</span>
+                </label>
+            </div>
+
+            <!-- Record Section - Updated UI -->
+            <div id="recordSection" class="slide-in mb-6">
+                <div class="drop-zone flex flex-col items-center justify-center p-10">
+                    <!-- Initial state: only show record button -->
+                    <div id="preRecordingState">
+                        <button id="recordButton" class="btn btn-primary mb-4">
+                            <span class="flex items-center">
+                                <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                                </svg>
+                                Start Recording
+                            </span>
+                        </button>
+                        <p id="recordingHelp" class="text-sm text-gray-500 mt-2">Click to start recording your voice message</p>
+                    </div>
+                    
+                    <!-- Recording state: show waveform, timer and control buttons -->
+                    <div id="activeRecordingState" class="hidden fade-in w-full">
+                        <div class="recording-container-wrapper">
+                            <div class="recording-container">
+                                <div class="toggle-btn control-btn" id="pauseRecordingBtn" style="color: var(--color-error); border-color: var(--color-error);">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                
+                                <div class="recording-waveform recording-active" id="recordingWaveform">
+                                    <div class="waveform-bar"></div>
+                                    <div class="waveform-bar"></div>
+                                    <div class="waveform-bar"></div>
+                                    <div class="waveform-bar"></div>
+                                    <div class="waveform-bar"></div>
+                                    <div class="waveform-bar"></div>
+                                    <div class="waveform-bar"></div>
+                                    <div class="waveform-bar"></div>
+                                </div>
+                                
+                                <div class="recording-controls">
+                                    <div class="recording-time">
+                                        <span id="recordingTime">0:00</span>
+                                    </div>
+                                    
+                                    <div class="submit-btn control-btn" id="submitRecordingBtn">
+                                        Submit
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Paused recording preview state - more consistent with recording state -->
+                    <div id="pausedRecordingState" class="hidden fade-in w-full">
+                        <div class="recording-container-wrapper">
+                            <div class="recording-container">
+                                <div class="toggle-btn control-btn play" id="playRecordingBtn" style="color: var(--color-primary); border-color: var(--color-primary);">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                
+                                <div class="recording-waveform" id="playbackWaveform">
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                    <div class="waveform-bar" style="height: 2px;"></div>
+                                </div>
+                                
+                                <div class="recording-controls">
+                                    <div class="trash-btn control-btn" id="trashRecordingBtn">
+                                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </div>
+                                    
+                                    <div class="submit-btn control-btn" id="finalizeRecordingBtn">
+                                        Submit
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Hidden audio element for preview playback -->
+                    <audio id="previewPlayer" class="hidden"></audio>
+                </div>
+            </div>
+
+            <!-- Upload Section -->
+            <div id="uploadSection" class="mb-6 hidden slide-in">
+                <div class="drop-zone flex flex-col items-center justify-center p-10">
+                    <input type="file" id="fileUpload" accept=".wav" class="hidden">
+                    <button id="uploadButton" class="btn btn-primary mb-4">
+                        <span class="flex items-center">
+                            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            Choose WAV File
+                        </span>
+                    </button>
+                    
+                    <p id="fileName" class="text-sm font-medium mb-2 hidden"></p>
+                    <p class="text-sm text-gray-500">Only WAV files are supported</p>
+                </div>
+            </div>
+
+            <!-- Audio Preview -->
+            <div id="audioPreview" class="mb-6 hidden fade-in">
+                <h3 class="section-heading">Audio Preview</h3>
+                <audio id="audioPlayer" controls class="audio-player"></audio>
+            </div>
+
+            <!-- Edit Section -->
+            <div id="editSection" class="mb-6 hidden slide-in">
+                <h3 class="section-heading">Edit Prompt</h3>
+                <div class="input-container">
+                    <textarea 
+                        id="editPrompt" 
+                        class="w-full" 
+                        rows="3" 
+                        placeholder="Enter instructions to edit the audio (e.g. 'Change word X to Y')"></textarea>
+                </div>
+                <div class="flex justify-center mt-6">
+                    <button 
+                        id="processButton" 
+                        class="btn btn-primary">
+                        Process Audio
+                    </button>
+                </div>
+            </div>
+
+            <!-- Result Section -->
+            <div id="resultSection" class="hidden fade-in">
+                <div class="success-message mb-6 flex items-center">
+                    <svg class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                     </svg>
-                    <p class="text-green-700 dark:text-green-200">Audio processing complete!</p>
+                    <p>Audio processing complete!</p>
+                </div>
+                
+                <div class="bg-gray-50 rounded-lg p-6 mb-6">
+                    <h3 class="section-heading flex items-center">
+                        <svg class="h-5 w-5 mr-2 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                        </svg>
+                        Processed Audio
+                    </h3>
+                    <audio id="processedAudio" controls class="audio-player mb-4"></audio>
+                    <p id="processingDetails" class="text-sm text-gray-600 italic"></p>
+                    <p id="editPromptDisplay" class="text-sm text-gray-600 mt-2"></p>
+                </div>
+                
+                <!-- Back Button for Step 3 -->
+                <div id="changePromptButtonContainer" class="mb-4 fade-in">
+                    <button id="changePromptButton" class="back-button">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                        <span>Change prompt</span>
+                    </button>
+                </div>
+                
+                <div class="flex justify-center space-x-4">
+                    <button id="downloadButton" class="btn btn-primary">
+                        <span class="flex items-center">
+                            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            Download
+                        </span>
+                    </button>
+                    <button id="useResultButton" class="btn btn-secondary">
+                        <span class="flex items-center">
+                            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                            Edit Result
+                        </span>
+                    </button>
+                    <button id="startOverButton" class="btn btn-secondary">
+                        <span class="flex items-center">
+                            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            Start Over
+                        </span>
+                    </button>
                 </div>
             </div>
-            
-            <div class="border rounded-lg p-6 bg-gray-50 mb-6 card slide-in">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                    <svg class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="hidden py-10 flex flex-col items-center">
+                <div class="loading-spinner mb-4"></div>
+                <p class="text-gray-600">Processing your audio...</p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="error-message hidden">
+                <div class="flex items-center">
+                    <svg class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                     </svg>
-                    Processed Audio:
-                </h3>
-                <audio id="processedAudio" controls class="audio-player mb-4"></audio>
-                <p id="processingDetails" class="text-sm text-gray-600 italic"></p>
-                <p id="editPromptDisplay" class="text-sm text-gray-600 mt-2"></p>
-            </div>
-            
-            <div class="mt-6 flex justify-center space-x-4">
-                <button id="downloadButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-full transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
-                    <span class="flex items-center">
-                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                        </svg>
-                        Download
-                    </span>
-                </button>
-                <button id="startOverButton" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-full transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50">
-                    <span class="flex items-center">
-                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                        </svg>
-                        Start Over
-                    </span>
-                </button>
-            </div>
-        </div>
-
-        <!-- Loading Indicator -->
-        <div id="loadingIndicator" class="hidden flex flex-col items-center justify-center py-8 slide-in">
-            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-            <p class="mt-4 text-gray-600">Processing your audio...</p>
-        </div>
-
-        <!-- Error Message -->
-        <div id="errorMessage" class="hidden bg-red-100 border-l-4 border-red-500 p-4 rounded dark:bg-red-900 dark:border-red-700 scale-in">
-            <div class="flex">
-                <svg class="h-6 w-6 mr-2 text-red-500 dark:text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                </svg>
-                <p id="errorText" class="text-red-700 dark:text-red-200"></p>
+                    <p id="errorText"></p>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // Set theme toggle functionality
+        const html = document.documentElement;
+        const themeToggle = document.getElementById('themeToggle');
+        const lightIcon = document.getElementById('lightIcon');
+        const darkIcon = document.getElementById('darkIcon');
+        
+        // Check saved theme or browser preference
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+            html.classList.add('dark');
+            lightIcon.classList.remove('hidden');
+            darkIcon.classList.add('hidden');
+        }
+        
+        themeToggle.addEventListener('click', function() {
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                darkIcon.classList.remove('hidden');
+                lightIcon.classList.add('hidden');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                lightIcon.classList.remove('hidden');
+                darkIcon.classList.add('hidden');
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+
         // Audio conversion helper function
         async function convertToWav(blob) {
             return new Promise(async (resolve, reject) => {
@@ -419,10 +1093,18 @@
         const errorMessage = document.getElementById('errorMessage');
         const errorText = document.getElementById('errorText');
         
+        // New UI elements
+        const preRecordingState = document.getElementById('preRecordingState');
+        const activeRecordingState = document.getElementById('activeRecordingState');
+        const pausedRecordingState = document.getElementById('pausedRecordingState');
         const recordButton = document.getElementById('recordButton');
-        const recordingStatus = document.getElementById('recordingStatus');
+        const pauseRecordingBtn = document.getElementById('pauseRecordingBtn');
+        const submitRecordingBtn = document.getElementById('submitRecordingBtn');
+        const playRecordingBtn = document.getElementById('playRecordingBtn');
+        const trashRecordingBtn = document.getElementById('trashRecordingBtn');
+        const finalizeRecordingBtn = document.getElementById('finalizeRecordingBtn');
         const recordingTime = document.getElementById('recordingTime');
-        const recordingHelp = document.getElementById('recordingHelp');
+        let previewPlayer = document.getElementById('previewPlayer');
         
         const uploadButton = document.getElementById('uploadButton');
         const fileUpload = document.getElementById('fileUpload');
@@ -435,53 +1117,11 @@
         const processButton = document.getElementById('processButton');
         const downloadButton = document.getElementById('downloadButton');
         const resetAudioButton = document.getElementById('resetAudioButton');
-        const backToAudioButton = document.getElementById('backToAudioButton');
         const startOverButton = document.getElementById('startOverButton');
+        const useResultButton = document.getElementById('useResultButton');
         
-        // Progress bar elements
-        const step1Label = document.getElementById('step1Label');
-        const step2Label = document.getElementById('step2Label');
-        const step3Label = document.getElementById('step3Label');
-        const progressBarFill = document.getElementById('progressBarFill');
-        
-        // Theme elements
-        const themeToggle = document.getElementById('themeToggle');
-        const lightIcon = document.getElementById('lightIcon');
-        const darkIcon = document.getElementById('darkIcon');
-        
-        // Theme toggle
-        themeToggle.addEventListener('click', function() {
-            const html = document.documentElement;
-            if (html.classList.contains('dark')) {
-                html.classList.remove('dark');
-                darkIcon.classList.add('hidden');
-                lightIcon.classList.remove('hidden');
-                localStorage.setItem('theme', 'light');
-            } else {
-                html.classList.add('dark');
-                lightIcon.classList.add('hidden');
-                darkIcon.classList.remove('hidden');
-                localStorage.setItem('theme', 'dark');
-            }
-        });
-        
-        // Set initial theme based on localStorage or default to dark
-        function setInitialTheme() {
-            const savedTheme = localStorage.getItem('theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            
-            if (savedTheme === 'light') {
-                document.documentElement.classList.remove('dark');
-                darkIcon.classList.add('hidden');
-                lightIcon.classList.remove('hidden');
-            } else if (savedTheme === 'dark' || prefersDark || !savedTheme) {
-                document.documentElement.classList.add('dark');
-                lightIcon.classList.add('hidden');
-                darkIcon.classList.remove('hidden');
-            }
-        }
-        
-        setInitialTheme();
+        // Progress steps
+        const progressSteps = document.querySelectorAll('.progress-step');
 
         // Audio recording variables
         let mediaRecorder;
@@ -489,35 +1129,70 @@
         let recordingInterval;
         let recordingSeconds = 0;
         let audioBlob = null;
+        let tempAudioBlob = null;
+        let processedAudioBlob = null;
+        let isEditingProcessedAudio = false;
+        let isPaused = false;
+        let audioStream = null;
+        let analyser = null;
+        let audioContext = null;
+        let dataArray = null;
+        let waveformBars = null;
+        let audioSourceNode = null;  // Track the MediaElementSourceNode
+        let audioSourceConnected = false;
 
-        // Progress management
+        // NEW FUNCTION: Update UI for current step
+        function updateUIForCurrentStep(step) {
+            // Handle visibility based on current step
+            const radioGroup = document.querySelector('.radio-group');
+            
+            if (step === 1) {
+                // In step 1, show the radio group and ensure it's visible
+                radioGroup.classList.remove('hidden');
+                radioGroup.style.display = ''; // Clear any inline display:none
+            } else {
+                // In any other step, hide the radio group with both class and inline style
+                radioGroup.classList.add('hidden');
+                radioGroup.style.display = 'none'; // Force hide with inline style
+            }
+        }
+
+        // MODIFIED: Progress management
         function updateProgress(step) {
-            // Reset all steps to inactive
-            [step1Label, step2Label, step3Label].forEach(el => {
-                el.classList.remove('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
-                el.classList.add('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
+            // Clear all line-active classes first
+            progressSteps.forEach(step => {
+                step.classList.remove('line-active');
             });
             
-            // Set the active step
-            if (step >= 1) {
-                step1Label.classList.remove('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
-                step1Label.classList.add('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
-            }
+            // Update each step status
+            progressSteps.forEach((progressStep, index) => {
+                const stepNumber = index + 1;
+                
+                // Reset classes first
+                progressStep.classList.remove('active', 'complete', 'line-active');
+                
+                if (stepNumber < step) {
+                    // Previous steps are complete
+                    progressStep.classList.add('complete');
+                } else if (stepNumber === step) {
+                    // Current step is active
+                    progressStep.classList.add('active');
+                } 
+                
+                // Special handling for the lines
+                // 1. Line between Step 1 and 2 should be active if we're in step 2 or higher
+                if (stepNumber === 2 && step >= 2) {
+                    progressStep.classList.add('line-active');
+                }
+                
+                // 2. Line between Step 2 and 3 should be active if we're in step 3
+                if (stepNumber === 3 && step === 3) {
+                    progressStep.classList.add('line-active');
+                }
+            });
             
-            if (step >= 2) {
-                step2Label.classList.remove('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
-                step2Label.classList.add('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
-            }
-            
-            if (step >= 3) {
-                step3Label.classList.remove('text-gray-600', 'bg-gray-200', 'dark:bg-gray-700', 'dark:text-gray-400');
-                step3Label.classList.add('text-blue-600', 'bg-blue-200', 'dark:bg-blue-900', 'dark:text-blue-200');
-            }
-            
-            // Update progress bar
-            if (step === 1) progressBarFill.style.width = '33.3%';
-            if (step === 2) progressBarFill.style.width = '66.6%';
-            if (step === 3) progressBarFill.style.width = '100%';
+            // Call our new function to update UI based on step
+            updateUIForCurrentStep(step);
         }
 
         // Switch between record and upload
@@ -536,25 +1211,384 @@
 
         // Recording functionality
         recordButton.addEventListener('click', async function() {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                stopRecording();
-            } else {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    startRecording(stream);
-                } catch (err) {
-                    showError('Microphone access denied or not available.');
-                    console.error('Error accessing microphone:', err);
+            try {
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                startRecording(audioStream);
+            } catch (err) {
+                showError('Microphone access denied or not available.');
+                console.error('Error accessing microphone:', err);
+            }
+        });
+        
+        // Pause/Resume button
+        pauseRecordingBtn.addEventListener('click', function() {
+            if (mediaRecorder) {
+                if (mediaRecorder.state === 'recording') {
+                    // Pause recording
+                    pauseRecording();
+                } else if (mediaRecorder.state === 'paused') {
+                    // Resume recording
+                    resumeRecording();
+                }
+            }
+        });
+        
+        // Submit recording button (from recording state)
+        submitRecordingBtn.addEventListener('click', function() {
+            if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+                finishRecording();
+            }
+        });
+        
+        // Play paused recording
+        playRecordingBtn.addEventListener('click', function() {
+            if (tempAudioBlob) {
+                if (previewPlayer.paused) {
+                    // Clean up previous audio processing
+                    cleanupAudioContext();
+                    
+                    // Create a fresh audio element each time to avoid the "already connected" error
+                    createFreshAudioElement();
+                    
+                    // Create a new blob URL and set it as the source
+                    previewPlayer.src = URL.createObjectURL(tempAudioBlob);
+                    
+                    // Set up audio visualization for the new player
+                    setupAudioVisualizationForPlayer();
+                    
+                    // Toggle the button to pause
+                    playRecordingBtn.innerHTML = `
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    `;
+                    playRecordingBtn.style.color = 'var(--color-error)';
+                    playRecordingBtn.style.borderColor = 'var(--color-error)';
+                    
+                    // Add class to enable animation during playback
+                    document.getElementById('playbackWaveform').classList.add('recording-active');
+                    
+                    // Start visualization
+                    visualizePlayback();
+                    
+                    // Play the audio with a small delay to ensure context is ready
+                    setTimeout(() => {
+                        previewPlayer.play().catch(err => {
+                            console.error('Error playing audio:', err);
+                            // Reset UI to play state if playback fails
+                            resetPlayButton();
+                        });
+                    }, 100);
+                } else {
+                    // Toggle the button to play
+                    resetPlayButton();
+                    
+                    // Pause the audio
+                    previewPlayer.pause();
+                }
+            }
+        });
+        
+        // Create a fresh audio element to avoid the "already connected" error
+        function createFreshAudioElement() {
+            // First, check if the element is in the DOM
+            const existingPlayer = document.getElementById('previewPlayer');
+            
+            // Clean up old element src if it exists
+            if (previewPlayer && previewPlayer.src) {
+                URL.revokeObjectURL(previewPlayer.src);
+            }
+            
+            // Create new element
+            const newPlayer = document.createElement('audio');
+            newPlayer.id = 'previewPlayer';
+            newPlayer.className = 'hidden';
+            newPlayer.addEventListener('ended', resetPlayButton);
+            
+            // Find the container - either use direct parent or find the drop-zone
+            const container = document.querySelector('#pausedRecordingState').closest('.drop-zone');
+            
+            // Replace or append depending on whether the element is in the DOM
+            if (existingPlayer && existingPlayer.parentNode) {
+                existingPlayer.parentNode.replaceChild(newPlayer, existingPlayer);
+            } else if (container) {
+                // Just append to the container if we can't replace
+                container.appendChild(newPlayer);
+            }
+            
+            // Update reference
+            previewPlayer = newPlayer;
+            
+            // Reset connected flag
+            audioSourceConnected = false;
+        }
+        
+        // Helper function to reset play button state
+        function resetPlayButton() {
+            playRecordingBtn.innerHTML = `
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            `;
+            playRecordingBtn.style.color = 'var(--color-primary)';
+            playRecordingBtn.style.borderColor = 'var(--color-primary)';
+            
+            // Remove animation class
+            document.getElementById('playbackWaveform').classList.remove('recording-active');
+            
+            // Reset waveform bars to silent state
+            const playbackWaveformBars = document.querySelectorAll('#playbackWaveform .waveform-bar');
+            playbackWaveformBars.forEach(bar => {
+                bar.style.height = '2px';
+            });
+        }
+        
+        // Trash recording button
+        trashRecordingBtn.addEventListener('click', function() {
+            // Reset recording
+            tempAudioBlob = null;
+            audioChunks = [];
+            recordingSeconds = 0;
+            
+            // Switch back to initial state
+            pausedRecordingState.classList.add('hidden');
+            preRecordingState.classList.remove('hidden');
+            
+            // Stop any preview playback
+            previewPlayer.pause();
+            if (previewPlayer.src) {
+                URL.revokeObjectURL(previewPlayer.src);
+                previewPlayer.src = '';
+            }
+            
+            // Clean up audio stream if it exists
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            
+            // Clean up audio context
+            cleanupAudioContext();
+        });
+        
+        // Audio ended event to reset the play button
+        previewPlayer.addEventListener('ended', resetPlayButton);
+        
+        // Finalize recording button (from paused state)
+        finalizeRecordingBtn.addEventListener('click', function() {
+            if (tempAudioBlob) {
+                audioBlob = tempAudioBlob;
+                
+                // Always create a fresh blob URL for the audio player
+                if (audioPlayer.src) {
+                    URL.revokeObjectURL(audioPlayer.src);
+                }
+                audioPlayer.src = URL.createObjectURL(audioBlob);
+                
+                // Proceed to the next step
+                audioPreview.classList.remove('hidden');
+                editSection.classList.remove('hidden');
+                
+                // Hide first step components and update progress
+                recordSection.classList.add('hidden');
+                uploadSection.classList.add('hidden');
+                document.getElementById('backButtonContainer').classList.remove('hidden');
+                updateProgress(2);
+                
+                // Reset recording UI for next time
+                preRecordingState.classList.remove('hidden');
+                activeRecordingState.classList.add('hidden');
+                pausedRecordingState.classList.add('hidden');
+                
+                // Clean up
+                clearInterval(recordingInterval);
+                recordingSeconds = 0;
+                audioChunks = [];
+                
+                // Reset playback waveform bars to silent state
+                const playbackWaveformBars = document.querySelectorAll('#playbackWaveform .waveform-bar');
+                playbackWaveformBars.forEach(bar => {
+                    bar.style.height = '2px';
+                });
+                
+                // Clean up audio stream
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
+                
+                // Clean up audio context
+                cleanupAudioContext();
+                
+                // Reset preview player
+                previewPlayer.pause();
+                if (previewPlayer.src) {
+                    URL.revokeObjectURL(previewPlayer.src);
+                    previewPlayer.src = '';
                 }
             }
         });
 
+        // Clean up the audio context and associated resources
+        function cleanupAudioContext() {
+            // Disconnect the audio source if it exists
+            if (audioSourceNode) {
+                try {
+                    audioSourceNode.disconnect();
+                } catch (err) {
+                    console.error('Error disconnecting audio source:', err);
+                }
+                audioSourceNode = null;
+            }
+            
+            // Close the audio context if it exists
+            if (audioContext) {
+                audioContext.close().catch(err => {
+                    console.error('Error closing audio context:', err);
+                });
+                audioContext = null;
+                analyser = null;
+            }
+            
+            // Reset the connected flag
+            audioSourceConnected = false;
+        }
+
+        function setupAudioVisualization(stream) {
+            try {
+                // Clean up previous audio context
+                cleanupAudioContext();
+                
+                // Create new audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create an analyser
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                
+                // Create a source from the stream
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                audioSourceNode = source;
+                
+                // Set up data array for frequency data
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                // Get waveform bars - make sure to select them after the container is visible
+                setTimeout(() => {
+                    waveformBars = document.querySelectorAll('#recordingWaveform .waveform-bar');
+                    // Start visualization
+                    visualize();
+                }, 50);
+            } catch (err) {
+                console.error('Error setting up audio visualization:', err);
+            }
+        }
+        
+        // Setup visualization for the preview player
+        function setupAudioVisualizationForPlayer() {
+            try {
+                // Clean up first
+                cleanupAudioContext();
+                
+                // Create a new audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create an analyser for playback
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                
+                // Create a source from the audio element
+                audioSourceNode = audioContext.createMediaElementSource(previewPlayer);
+                audioSourceNode.connect(analyser);
+                analyser.connect(audioContext.destination);
+                audioSourceConnected = true;
+                
+                // Set up data array for frequency data
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                // Get playback waveform bars
+                waveformBars = document.querySelectorAll('#playbackWaveform .waveform-bar');
+                
+            } catch (err) {
+                console.error('Error setting up playback visualization:', err);
+                cleanupAudioContext();
+            }
+        }
+        
+        // Update waveform visualization
+        function visualize() {
+            if (!analyser || !waveformBars || waveformBars.length === 0) return;
+            
+            // Get frequency data
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Use frequency data to adjust bar heights
+            for (let i = 0; i < waveformBars.length; i++) {
+                const index = Math.floor(i * analyser.frequencyBinCount / waveformBars.length);
+                const value = dataArray[index];
+                const percent = value / 255;
+                const height = 5 + (percent * 25); // Scale between 5px and 30px
+                waveformBars[i].style.height = height + 'px';
+            }
+            
+            // Continue visualization loop if still recording
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                requestAnimationFrame(visualize);
+            }
+        }
+        
+        // Update playback waveform visualization
+        function visualizePlayback() {
+            if (!analyser || !waveformBars || waveformBars.length === 0) return;
+            
+            // Only run visualization if we're playing back
+            if (previewPlayer && !previewPlayer.paused) {
+                // Get frequency data
+                analyser.getByteFrequencyData(dataArray);
+                
+                // Use frequency data to adjust bar heights
+                for (let i = 0; i < waveformBars.length; i++) {
+                    const index = Math.floor(i * analyser.frequencyBinCount / waveformBars.length);
+                    const value = dataArray[index];
+                    const percent = value / 255;
+                    const height = 5 + (percent * 25); // Scale between 5px and 30px
+                    waveformBars[i].style.height = height + 'px';
+                }
+                
+                // Continue visualization loop
+                requestAnimationFrame(visualizePlayback);
+            }
+        }
+
         function startRecording(stream) {
             audioChunks = [];
             recordingSeconds = 0;
+            isPaused = false;
+            
+            // Switch UI to recording state
+            preRecordingState.classList.add('hidden');
+            activeRecordingState.classList.remove('hidden');
+            pausedRecordingState.classList.add('hidden');
+            
+            // Ensure the pause button is in the correct state (red pause icon)
+            pauseRecordingBtn.innerHTML = `
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            `;
+            pauseRecordingBtn.style.color = 'var(--color-error)';
+            pauseRecordingBtn.style.borderColor = 'var(--color-error)';
+            
+            // Ensure waveform animation is active
+            document.querySelector('.recording-waveform').classList.add('recording-active');
             
             // Immediately reset and display timer
             recordingTime.textContent = "0:00";
+            
+            // Set up audio visualization
+            setupAudioVisualization(stream);
             
             // Use higher quality audio encoding where available
             const options = { mimeType: 'audio/webm;codecs=opus' };
@@ -577,61 +1611,106 @@
             
             mediaRecorder.addEventListener('stop', async () => {
                 // Create blob with proper MIME type
-                audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                tempAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 
-                // Convert webm to wav using a helper function
-                if (audioBlob.type === 'audio/webm') {
+                // Convert webm to wav 
+                if (tempAudioBlob.type === 'audio/webm') {
                     try {
-                        // Use Web Audio API to properly convert to WAV
-                        const wavBlob = await convertToWav(audioBlob);
-                        audioBlob = wavBlob;
+                        // Use Web Audio API to convert to WAV
+                        const wavBlob = await convertToWav(tempAudioBlob);
+                        tempAudioBlob = wavBlob;
                     } catch (err) {
                         console.error('Error converting audio format:', err);
                         // Continue with original blob if conversion fails
                     }
                 }
                 
-                audioPlayer.src = URL.createObjectURL(audioBlob);
-                audioPreview.classList.remove('hidden');
-                editSection.classList.remove('hidden');
-                
-                // Hide first step components and update progress
-                recordSection.classList.add('hidden');
-                uploadSection.classList.add('hidden');
-                document.querySelector('.mb-8.slide-in').classList.add('hidden'); // Hide radio button choices
-                document.getElementById('backButtonContainer').classList.remove('hidden'); // Show back button
-                updateProgress(2);
-                
-                recordButton.textContent = 'Start Recording';
-                recordButton.classList.remove('bg-red-500', 'hover:bg-red-600');
-                recordButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
-                recordingStatus.classList.add('hidden');
-                recordingHelp.textContent = 'Click to start recording your voice message';
+                // Set up preview player
+                if (previewPlayer.src) {
+                    URL.revokeObjectURL(previewPlayer.src);
+                }
+                previewPlayer.src = URL.createObjectURL(tempAudioBlob);
                 
                 clearInterval(recordingInterval);
             });
             
-            recordButton.textContent = 'Stop Recording';
-            recordButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
-            recordButton.classList.add('bg-red-500', 'hover:bg-red-600');
-            recordingStatus.classList.remove('hidden');
-            recordingHelp.textContent = 'Click to stop recording';
-            
-            // Reset and display timer immediately
-            recordingSeconds = 0;
-            recordingTime.textContent = "0:00";
-            
             recordingInterval = setInterval(() => {
-                recordingSeconds++;
-                const minutes = Math.floor(recordingSeconds / 60);
-                const seconds = recordingSeconds % 60;
-                recordingTime.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                if (!isPaused) {
+                    recordingSeconds++;
+                    const minutes = Math.floor(recordingSeconds / 60);
+                    const seconds = recordingSeconds % 60;
+                    recordingTime.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                }
             }, 1000);
         }
+        
+        function pauseRecording() {
+            if (mediaRecorder) {
+                mediaRecorder.pause();
+                isPaused = true;
+                
+                // Update pause button icon to resume icon
+                pauseRecordingBtn.innerHTML = `
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                `;
+                pauseRecordingBtn.style.color = 'var(--color-primary)';
+                pauseRecordingBtn.style.borderColor = 'var(--color-primary)';
+                
+                // Stop waveform animation
+                document.querySelector('#recordingWaveform').classList.remove('recording-active');
+            }
+        }
+        
+        function resumeRecording() {
+            if (mediaRecorder) {
+                mediaRecorder.resume();
+                isPaused = false;
+                
+                // Update resume button icon back to pause icon
+                pauseRecordingBtn.innerHTML = `
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                `;
+                pauseRecordingBtn.style.color = 'var(--color-error)';
+                pauseRecordingBtn.style.borderColor = 'var(--color-error)';
+                
+                // Resume waveform animation
+                document.querySelector('#recordingWaveform').classList.add('recording-active');
+                
+                // Resume visualization
+                if (analyser) {
+                    waveformBars = document.querySelectorAll('#recordingWaveform .waveform-bar');
+                    visualize();
+                }
+            }
+        }
 
-        function stopRecording() {
-            mediaRecorder.stop();
-            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        function finishRecording() {
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                // Show paused state with play/trash/submit options
+                activeRecordingState.classList.add('hidden');
+                pausedRecordingState.classList.remove('hidden');
+                
+                // Ensure play button is in the correct state (green play icon)
+                playRecordingBtn.innerHTML = `
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                `;
+                playRecordingBtn.style.color = 'var(--color-primary)';
+                playRecordingBtn.style.borderColor = 'var(--color-primary)';
+                
+                // Clean up audio context
+                cleanupAudioContext();
+            }
         }
 
         // File upload functionality
@@ -658,8 +1737,7 @@
                 // Hide first step components
                 recordSection.classList.add('hidden');
                 uploadSection.classList.add('hidden');
-                document.querySelector('.mb-8.slide-in').classList.add('hidden'); // Hide radio button choices
-                document.getElementById('backButtonContainer').classList.remove('hidden'); // Show back button
+                document.getElementById('backButtonContainer').classList.remove('hidden');
                 updateProgress(2);
             }
         });
@@ -670,7 +1748,38 @@
         });
                 
         startOverButton.addEventListener('click', function() {
-            resetToStep1();
+            // Add confirmation dialog
+            if (confirm('Are you sure you want to start over? Your current audio and edits will be lost.')) {
+                resetToStep1();
+            }
+        });
+        
+        // Change prompt button - Go back to step 2 with the original audio
+        document.getElementById('changePromptButton').addEventListener('click', function() {
+            resultSection.classList.add('hidden');
+            audioPreview.classList.remove('hidden');
+            editSection.classList.remove('hidden');
+            document.getElementById('backButtonContainer').classList.remove('hidden');
+            // Don't clear the prompt value to allow editing
+            isEditingProcessedAudio = false; // We're using the original audio
+            updateProgress(2);
+        });
+        
+        // "Edit Result" button - Go back to step 2 with the processed audio
+        useResultButton.addEventListener('click', function() {
+            // Use the processed audio as the new input
+            if (processedAudioBlob) {
+                audioBlob = processedAudioBlob;
+                audioPlayer.src = URL.createObjectURL(processedAudioBlob);
+            }
+            
+            resultSection.classList.add('hidden');
+            audioPreview.classList.remove('hidden');
+            editSection.classList.remove('hidden');
+            document.getElementById('backButtonContainer').classList.remove('hidden');
+            editPrompt.value = ''; // Clear the previous prompt
+            isEditingProcessedAudio = true; // We're now editing the processed audio
+            updateProgress(2);
         });
         
         function resetToStep1() {
@@ -678,24 +1787,59 @@
             audioPreview.classList.add('hidden');
             editSection.classList.add('hidden');
             resultSection.classList.add('hidden');
-            document.getElementById('backButtonContainer').classList.add('hidden'); // Hide back button
+            document.getElementById('backButtonContainer').classList.add('hidden');
             hideError();
             
             // Reset recording if active
             if (mediaRecorder && mediaRecorder.state === 'recording') {
-                stopRecording();
+                finishRecording();
             }
+            
+            // Reset recording UI
+            preRecordingState.classList.remove('hidden');
+            activeRecordingState.classList.add('hidden');
+            pausedRecordingState.classList.add('hidden');
             
             // Reset form elements
             audioBlob = null;
-            audioPlayer.src = '';
-            processedAudio.src = '';
+            tempAudioBlob = null;
+            processedAudioBlob = null;
+            isEditingProcessedAudio = false;
+            
+            // Clean up audio sources and revoke blob URLs
+            if (audioPlayer.src) {
+                URL.revokeObjectURL(audioPlayer.src);
+                audioPlayer.src = '';
+            }
+            
+            if (previewPlayer.src) {
+                URL.revokeObjectURL(previewPlayer.src);
+                previewPlayer.src = '';
+            }
+            
+            if (processedAudio.src) {
+                URL.revokeObjectURL(processedAudio.src);
+                processedAudio.src = '';
+            }
+            
             editPrompt.value = '';
             fileName.textContent = '';
             fileName.classList.add('hidden');
             
+            // Reset file input to allow the same file to be selected again
+            fileUpload.value = '';
+            
+            // Reset audio visualization
+            cleanupAudioContext();
+            
+            // Clean up audio stream if it exists
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            
             // Show radio buttons for input method
-            document.querySelector('.mb-8.slide-in').classList.remove('hidden');
+            document.querySelector('.radio-group').classList.remove('hidden');
             
             // Show appropriate section based on selected input method
             if (document.getElementById('record').checked) {
@@ -771,6 +1915,9 @@
                     processedBlob = await response.blob();
                 }
                 
+                // Store the processed blob for potential reuse
+                processedAudioBlob = processedBlob;
+                
                 // Display just the processed audio
                 processedAudio.src = URL.createObjectURL(processedBlob);
                 
@@ -782,7 +1929,7 @@
                 // Hide sections
                 audioPreview.classList.add('hidden');
                 editSection.classList.add('hidden');
-                document.getElementById('backButtonContainer').classList.add('hidden'); // Hide back button
+                document.getElementById('backButtonContainer').classList.add('hidden');
                 
                 // Show result section
                 resultSection.classList.remove('hidden');
@@ -812,16 +1959,38 @@
             resultSection.classList.add('hidden');
             hideError();
             
+            // Reset recording UI
+            preRecordingState.classList.remove('hidden');
+            activeRecordingState.classList.add('hidden');
+            pausedRecordingState.classList.add('hidden');
+            
+            // Reset recording state
             if (mediaRecorder && mediaRecorder.state === 'recording') {
-                stopRecording();
+                finishRecording();
+            }
+            
+            // Reset audio visualization
+            cleanupAudioContext();
+            
+            // Clean up audio stream if it exists
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
             }
             
             audioBlob = null;
+            tempAudioBlob = null;
+            processedAudioBlob = null;
+            isEditingProcessedAudio = false;
             audioPlayer.src = '';
+            previewPlayer.src = '';
             processedAudio.src = '';
             editPrompt.value = '';
             fileName.textContent = '';
             fileName.classList.add('hidden');
+            
+            // Reset file input
+            fileUpload.value = '';
             
             updateProgress(1);
         }

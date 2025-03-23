@@ -1,12 +1,20 @@
-# 🎙️ Voice Inpainting
+# Voice Inpainting
 
-Edit voice messages based on prompts by orchestrating Whisper for transcription, LLaMA 3 8B Instruct for edit detection, and F5-TTS for audio generation.
+
+Application for seamless voice message editing using natural language prompts.
+
+## Overview
+
+Voice Inpainting enables precise editing of speech recordings by operating directly on RVQ (Residual Vector Quantization) tokens rather than word-level timestamps, resulting in natural-sounding edits that preserve the speaker's voice characteristics.
 
 ![Architecture diagram](./architecture_diagram.svg)
 
 ## Setup
 
-The demo requires a access to the LLaMA 3 8B Instruct repository (can be requested on [HuggingFace](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)).
+The demo requires HuggingFace access to:
+
+- [LLaMA 3 8B Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
+- [CSM 1B](https://huggingface.co/sesame/csm-1b)
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer) for package management:
 
@@ -21,11 +29,28 @@ Setup the environment:
 uv sync
 ```
 
-## Run
+Start the uvicorn server:
 
 ```bash
 uv run main.py
 ```
+
+## Core Technology
+
+- **RVQ Token Processing**: Works at the acoustic token level for higher fidelity edits
+- **Sesame CSM**: Generates natural speech while preserving voice characteristics 
+- **Whisper**: Provides accurate speech transcription
+- **LLaMA 3**: Identifies edit regions from natural language prompts
+
+## Key Features
+
+- **High-fidelity editing**: Natural-sounding results with seamless transitions
+- **Voice preservation**: Maintains original intonation, prosody, and speaker identity
+- **Context-aware generation**: Uses surrounding audio for natural flow
+- **Multiple fusion methods**: Configurable transition techniques for optimal results
+- **Minimalist frontend**: Clean, intuitive interface for quick edits
+
+Voice Inpainting represents a significant improvement over traditional word-timestamp approaches, offering professional-quality results by working directly with the acoustic representation of speech.
 
 ## Architecture Diagram
 
