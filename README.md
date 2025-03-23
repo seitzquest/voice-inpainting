@@ -34,7 +34,7 @@ uv run main.py
 
 ## Core Technology
 
-![Architecture diagram](./architecture_diagra.svg)
+![Architecture diagram](./architecture_diagram.svg)
 
 - **RVQ Token Processing**: Works at the acoustic token level for higher fidelity edits
 - **Sesame CSM**: Generates natural speech while preserving voice characteristics 
