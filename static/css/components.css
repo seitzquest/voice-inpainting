@@ -1,0 +1,290 @@
+/* 
+* components.css
+* Styles for specific UI components
+*/
+
+/* Progress steps component */
+.progress-container {
+    display: flex;
+    margin-bottom: 2rem;
+}
+
+.progress-step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+}
+
+.progress-step::before {
+    content: '';
+    position: absolute;
+    top: 1rem;
+    left: -50%;
+    width: 100%;
+    height: 2px;
+    background-color: var(--color-gray);
+    z-index: 0;
+}
+
+.progress-step:first-child::before {
+    display: none;
+}
+
+.progress-marker {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background-color: var(--color-gray);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-dark);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    z-index: 1;
+    transition: var(--transition-default);
+}
+
+.progress-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-dark);
+    opacity: 0.7;
+    transition: var(--transition-default);
+}
+
+.progress-step.active .progress-marker {
+    background-color: var(--color-primary);
+    color: var(--color-light);
+}
+
+.progress-step.active .progress-label {
+    color: var(--color-primary);
+    opacity: 1;
+}
+
+.progress-step.complete .progress-marker {
+    background-color: var(--color-primary-light);
+    color: var(--color-light);
+}
+
+.progress-step.complete::before {
+    background-color: var(--color-primary-light);
+}
+
+/* Active line connection */
+.progress-step.line-active::before {
+    background-color: var(--color-primary-light);
+}
+
+/* Recording UI components */
+.recording-container-wrapper {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: 1rem 0;
+    user-select: none; /* Prevent text selection/cursor */
+}
+
+.recording-container {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--color-light);
+    border-radius: 9999px;
+    box-shadow: var(--shadow-subtle);
+    width: 100%;
+    max-width: 400px;
+    transition: all 0.3s ease;
+}
+
+.dark .recording-container {
+    background-color: #2A2A2A;
+    border: 1px solid #444;
+}
+
+.recording-indicator {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.recording-pulse {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+    background-color: var(--color-error);
+    margin-right: 0.5rem;
+    animation: pulse 1.5s infinite;
+    min-width: 0.75rem;
+}
+
+/* Waveform visualization */
+.recording-waveform {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    margin: 0 0.75rem;
+    flex-grow: 1;
+    cursor: default;
+    pointer-events: none; /* Prevent interaction with waveform */
+}
+
+.waveform-bar {
+    width: 3px;
+    height: 12px;
+    margin: 0 2px;
+    background-color: var(--color-primary-light);
+    border-radius: 1px;
+}
+
+.recording-active .waveform-bar {
+    animation: waveform 1.5s ease-in-out infinite;
+}
+
+/* Create different heights and delays for waveform bars */
+.waveform-bar:nth-child(1) { animation-delay: 0.0s; }
+.waveform-bar:nth-child(2) { animation-delay: 0.1s; height: 16px; }
+.waveform-bar:nth-child(3) { animation-delay: 0.2s; height: 10px; }
+.waveform-bar:nth-child(4) { animation-delay: 0.3s; height: 18px; }
+.waveform-bar:nth-child(5) { animation-delay: 0.4s; height: 12px; }
+.waveform-bar:nth-child(6) { animation-delay: 0.5s; height: 14px; }
+.waveform-bar:nth-child(7) { animation-delay: 0.6s; height: 20px; }
+.waveform-bar:nth-child(8) { animation-delay: 0.7s; height: 12px; }
+.waveform-bar:nth-child(9) { animation-delay: 0.8s; height: 16px; }
+.waveform-bar:nth-child(10) { animation-delay: 0.9s; height: 14px; }
+
+/* Recording controls */
+.recording-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.recording-time {
+    font-weight: 500;
+    color: var(--color-primary-dark);
+    min-width: 40px;
+    text-align: center;
+    margin-right: 8px;
+}
+
+.dark .recording-time {
+    color: var(--color-primary-light);
+}
+
+.control-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toggle-btn {
+    background-color: transparent;
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+}
+
+.toggle-btn:hover {
+    transform: scale(1.1);
+    background-color: rgba(220, 38, 38, 0.1);
+}
+
+.toggle-btn.play {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.toggle-btn.play:hover {
+    background-color: rgba(91, 101, 41, 0.1);
+}
+
+.submit-btn {
+    background-color: var(--color-primary);
+    color: var(--color-light);
+    padding: 0 14px;
+    border-radius: 16px;
+    width: auto;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.submit-btn:hover {
+    transform: scale(1.03);
+    background-color: var(--color-primary-light);
+}
+
+.play-btn {
+    background-color: var(--color-primary);
+    color: var(--color-light);
+}
+
+.play-btn:hover {
+    transform: scale(1.1);
+    background-color: var(--color-primary-light);
+}
+
+.trash-btn {
+    background-color: #f87171;
+    color: var(--color-light);
+}
+
+.trash-btn:hover {
+    transform: scale(1.1);
+    background-color: #ef4444;
+}
+
+/* Preview recording container */
+.preview-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--color-secondary-light);
+    border-radius: 9999px;
+    box-shadow: var(--shadow-subtle);
+    width: 100%;
+    max-width: 400px;
+    margin: 1rem auto;
+}
+
+.dark .preview-container {
+    background-color: #333;
+    border: 1px solid #444;
+}
+
+.preview-waveform {
+    display: flex;
+    align-items: center;
+    height: 32px;
+    flex-grow: 1;
+    margin: 0 0.75rem;
+}
+
+.preview-waveform-bar {
+    width: 3px;
+    height: 12px;
+    margin: 0 2px;
+    background-color: var(--color-primary-dark);
+    border-radius: 1px;
+}
+
+.preview-waveform-bar:nth-child(1) { height: 10px; }
+.preview-waveform-bar:nth-child(2) { height: 14px; }
+.preview-waveform-bar:nth-child(3) { height: 8px; }
+.preview-waveform-bar:nth-child(4) { height: 16px; }
+.preview-waveform-bar:nth-child(5) { height: 12px; }
+.preview-waveform-bar:nth-child(6) { height: 18px; }
+.preview-waveform-bar:nth-child(7) { height: 10px; }
+.preview-waveform-bar:nth-child(8) { height: 14px; }
+.preview-waveform-bar:nth-child(9) { height: 8px; }
+.preview-waveform-bar:nth-child(10) { height: 12px; }

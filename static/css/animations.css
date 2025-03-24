@@ -1,0 +1,54 @@
+/* 
+* animations.css
+* Animation definitions and transition overrides
+*/
+
+/* Keyframe Animations */
+@keyframes waveform {
+    0%, 100% { transform: scaleY(0.6); }
+    50% { transform: scaleY(1.1); }
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; transform: scale(0.95); }
+    50% { opacity: 1; transform: scale(1.05); }
+    100% { opacity: 0.5; transform: scale(0.95); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Animation Classes */
+.fade-in {
+    animation: fadeIn 0.5s ease-in forwards;
+}
+
+.slide-in {
+    animation: slideIn 0.5s ease-out forwards;
+}
+
+/* Override transition for elements with animations to avoid conflicts */
+.recording-pulse, 
+.fade-in, 
+.slide-in,
+.loading-spinner,
+.waveform-bar {
+    transition: none !important;
+}
+
+/* Ensure SVG logos don't have jarring transitions */
+.svg-logo {
+    transition: var(--transition-default);
+}
