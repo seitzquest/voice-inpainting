@@ -12,6 +12,9 @@ class AudioVisualizer {
         this.waveformBars = null;
         this.audioSourceConnected = false;
         this.animationFrame = null;
+        this.isActive = false;        // Whether visualization is active
+        this.visualizationType = null; // 'recording' or 'playback'
+        this.currentSelector = null;   // Current waveform selector
     }
     
     /**
@@ -43,8 +46,11 @@ class AudioVisualizer {
             this.analyser = null;
         }
         
-        // Reset flag
+        // Reset flags
         this.audioSourceConnected = false;
+        this.isActive = false;
+        this.visualizationType = null;
+        this.currentSelector = null;
     }
     
     /**
@@ -63,6 +69,7 @@ class AudioVisualizer {
             // Create an analyser
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 256;
+            this.analyser.smoothingTimeConstant = 0.7; // Better smoothing
             
             // Create a source from the stream
             const source = this.audioContext.createMediaStreamSource(stream);
@@ -72,11 +79,15 @@ class AudioVisualizer {
             // Set up data array for frequency data
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
+            // Set state
+            this.visualizationType = 'recording';
+            this.currentSelector = waveformSelector;
+            
             // Get waveform bars
             setTimeout(() => {
                 this.waveformBars = document.querySelectorAll(`${waveformSelector} .waveform-bar`);
                 // Start visualization
-                this.visualize();
+                this.startRecordingVisualization();
             }, 50);
         } catch (err) {
             console.error('Error setting up audio visualization:', err);
@@ -96,9 +107,12 @@ class AudioVisualizer {
             // Create a new audio context
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Create an analyser
+            // Create an analyser with enhanced settings for playback
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 256;
+            this.analyser.smoothingTimeConstant = 0.5; // Less smoothing for more responsive playback
+            this.analyser.minDecibels = -90;
+            this.analyser.maxDecibels = -10;
             
             // Create a source from the audio element
             this.audioSourceNode = this.audioContext.createMediaElementSource(audioElement);
@@ -108,6 +122,10 @@ class AudioVisualizer {
             
             // Set up data array for frequency data
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            
+            // Set state
+            this.visualizationType = 'playback';
+            this.currentSelector = waveformSelector;
             
             // Get waveform bars
             this.waveformBars = document.querySelectorAll(`${waveformSelector} .waveform-bar`);
@@ -119,37 +137,72 @@ class AudioVisualizer {
     }
     
     /**
-     * Update visualization for recording or playback
-     * @param {boolean} isPlayback - If this is playback (true) or recording (false)
-     * @param {HTMLAudioElement} [audioElement] - Audio element for playback checking
+     * Start recording visualization
      */
-    visualize(isPlayback = false, audioElement = null) {
-        if (!this.analyser || !this.waveformBars || this.waveformBars.length === 0) return;
+    startRecordingVisualization() {
+        this.isActive = true;
+        this.visualize();
+    }
+    
+    /**
+     * Pause visualization and reset waveform
+     */
+    pauseVisualization() {
+        this.isActive = false;
         
-        // For playback, only continue if audio is playing
-        if (isPlayback && audioElement && audioElement.paused) {
+        if (this.animationFrame) {
+            cancelAnimationFrame(this.animationFrame);
+            this.animationFrame = null;
+        }
+        
+        // Reset the current waveform if we have one
+        if (this.currentSelector) {
+            this.resetWaveform(this.currentSelector);
+        }
+    }
+    
+    /**
+     * Resume visualization
+     */
+    resumeVisualization() {
+        if (!this.isActive) {
+            this.isActive = true;
+            this.visualize();
+        }
+    }
+    
+    /**
+     * Update visualization based on audio data
+     */
+    visualize() {
+        // If visualization is not active, don't continue
+        if (!this.isActive || !this.analyser || !this.waveformBars || this.waveformBars.length === 0) {
             return;
         }
         
         // Get frequency data
         this.analyser.getByteFrequencyData(this.dataArray);
         
+        // Determine scaling based on visualization type
+        const scaleFactor = this.visualizationType === 'playback' ? 1.5 : 1.0; // Boost playback visualization
+        
         // Use frequency data to adjust bar heights
         for (let i = 0; i < this.waveformBars.length; i++) {
-            const index = Math.floor(i * this.analyser.frequencyBinCount / this.waveformBars.length);
+            // Use different frequency bands based on the bar index
+            // This creates a more natural waveform appearance
+            const index = Math.floor((i / this.waveformBars.length) * (this.dataArray.length * 0.75));
             const value = this.dataArray[index];
-            const percent = value / 255;
+            
+            // Apply scaling and handle bounds
+            const percent = Math.min(1.0, (value / 255) * scaleFactor);
             const height = 5 + (percent * 25); // Scale between 5px and 30px
-            this.waveformBars[i].style.height = height + 'px';
+            
+            this.waveformBars[i].style.height = `${height}px`;
         }
         
-        // Continue visualization loop based on mode
-        if (isPlayback) {
-            if (audioElement && !audioElement.paused) {
-                this.animationFrame = requestAnimationFrame(() => this.visualize(true, audioElement));
-            }
-        } else {
-            this.animationFrame = requestAnimationFrame(() => this.visualize(false));
+        // Continue visualization if still active
+        if (this.isActive) {
+            this.animationFrame = requestAnimationFrame(() => this.visualize());
         }
     }
     
@@ -158,7 +211,32 @@ class AudioVisualizer {
      * @param {HTMLAudioElement} audioElement - Audio element for playback
      */
     visualizePlayback(audioElement) {
-        this.visualize(true, audioElement);
+        if (!audioElement) return;
+        
+        // Start visualization
+        this.isActive = true;
+        
+        // If audio isn't ready, wait for it
+        if (audioElement.readyState < 2) { // HAVE_CURRENT_DATA or higher
+            audioElement.addEventListener('canplay', () => {
+                if (this.isActive) {
+                    this.visualize();
+                }
+            }, { once: true });
+            return;
+        }
+        
+        // Start visualization
+        this.visualize();
+        
+        // Monitor playback state - if it ends/pauses, stop visualization
+        audioElement.addEventListener('pause', () => {
+            this.pauseVisualization();
+        }, { once: true });
+        
+        audioElement.addEventListener('ended', () => {
+            this.pauseVisualization();
+        }, { once: true });
     }
     
     /**
