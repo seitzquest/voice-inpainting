@@ -1,3 +1,4 @@
+import json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,7 +11,8 @@ from loguru import logger
 import time
 from dotenv import load_dotenv
 
-from src.main import voice_inpainting
+from src.main import setup_device, voice_inpainting, voice_inpainting_multi
+from src.tokenization import AudioTokenizer
 
 # Load HF token
 load_dotenv()
@@ -48,6 +50,95 @@ def cleanup_files(file_paths):
 def delayed_cleanup(file_paths, delay_seconds=1800):
     time.sleep(delay_seconds)
     cleanup_files(file_paths)
+
+
+@app.post("/api/tokenize")
+async def tokenize_audio(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
+):
+    """Tokenize audio and return transcription with token metadata"""
+    # Log details about the uploaded file
+    logger.info(
+        f"Tokenizing file: {audio.filename}, Content-Type: {audio.content_type}"
+    )
+
+    # Generate unique ID for the input file
+    session_id = str(uuid.uuid4())
+    input_path = f"data/input/{session_id}.wav"
+
+    try:
+        # Save the uploaded audio file
+        content = await audio.read()
+        with open(input_path, "wb") as buffer:
+            buffer.write(content)
+
+        # Reset file pointer for future reads if needed
+        await audio.seek(0)
+
+        # Verify the file was saved correctly
+        if not os.path.exists(input_path):
+            raise HTTPException(
+                status_code=500, detail="Failed to save input audio file"
+            )
+
+        # Set up device
+        device = setup_device()
+
+        # Tokenize the audio using the AudioTokenizer
+        logger.info("Tokenizing audio to get token metadata...")
+        tokenizer = AudioTokenizer(device=device)
+        tokenized_audio = tokenizer.tokenize(input_path)
+
+        # Extract token metadata including timestamps
+        tokens_metadata = []
+
+        # First build a mapping of character indices to their corresponding words
+        char_to_word = {}
+        if tokenized_audio.word_timestamps:
+            for word_info in tokenized_audio.word_timestamps:
+                word_start = tokenized_audio.text.find(word_info["word"])
+                if word_start >= 0:
+                    for i in range(word_start, word_start + len(word_info["word"])):
+                        char_to_word[i] = word_info
+
+        # Map tokens to text positions and extract metadata
+        for i in range(len(tokenized_audio.semantic_tokens)):
+            # Check if this token index maps to a text position
+            if i in tokenized_audio.token_to_text_map:
+                char_idx = tokenized_audio.token_to_text_map[i]
+
+                # Find the corresponding word/segment
+                word_info = char_to_word.get(char_idx)
+
+                if word_info:
+                    tokens_metadata.append(
+                        {
+                            "token_idx": i,
+                            "text": word_info["word"],
+                            "start_time": word_info["start"],
+                            "end_time": word_info["end"],
+                        }
+                    )
+
+        # Schedule delayed cleanup of files (30 minutes TTL)
+        background_tasks.add_task(delayed_cleanup, [input_path])
+
+        # Prepare response
+        response_data = {
+            "status": "success",
+            "session_id": session_id,
+            "text": tokenized_audio.text,
+            "tokens": tokens_metadata,
+        }
+
+        return response_data
+
+    except Exception as e:
+        logger.error(f"Error tokenizing audio: {str(e)}")
+        # Clean up any files that were created
+        background_tasks.add_task(cleanup_files, [input_path])
+        raise HTTPException(status_code=500, detail=f"Error tokenizing audio: {str(e)}")
 
 
 @app.post("/api/process")
@@ -112,6 +203,97 @@ async def process_audio(
                 "output_url": output_url,
                 "processing_time": processing_time,
                 "prompt": prompt,
+                "details": processing_result
+                if isinstance(processing_result, (dict, list, str))
+                else "Processing completed successfully",
+            }
+            return response_data
+        else:
+            # Return the raw audio file
+            return FileResponse(
+                output_path, media_type="audio/wav", filename="processed_audio.wav"
+            )
+
+    except Exception as e:
+        logger.error(f"Error processing audio: {str(e)}")
+        # Clean up any files that were created
+        background_tasks.add_task(cleanup_files, [input_path, output_path])
+        raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
+
+
+@app.post("/api/process-multi")
+async def process_audio_multi(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
+    edit_operations: str = Form(...),
+    fusion_method: Optional[str] = Form("crossfade"),
+    return_metadata: Optional[bool] = Form(False),
+):
+    """Process audio with multiple edit operations"""
+    # Log details about the uploaded file
+    logger.info(f"Received file: {audio.filename}, Content-Type: {audio.content_type}")
+
+    # Generate unique IDs for the input and output files
+    session_id = str(uuid.uuid4())
+    input_path = f"data/input/{session_id}.wav"
+    output_path = f"data/output/{session_id}.wav"
+
+    # Parse edit operations from JSON string
+    try:
+        edit_ops = json.loads(edit_operations)
+        logger.info(f"Processing audio with {len(edit_ops)} edit operations")
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid edit operations format: {str(e)}"
+        )
+
+    try:
+        # Save the uploaded audio file
+        content = await audio.read()
+        with open(input_path, "wb") as buffer:
+            buffer.write(content)
+
+        # Reset file pointer for future reads if needed
+        await audio.seek(0)
+
+        # Verify the file was saved correctly
+        if not os.path.exists(input_path):
+            raise HTTPException(
+                status_code=500, detail="Failed to save input audio file"
+            )
+
+        file_size = os.path.getsize(input_path)
+        logger.info(f"Saved input file to {input_path}, size: {file_size} bytes")
+
+        # Process the audio with the multi-edit voice inpainting function
+        start_time = time.time()
+        processing_result = voice_inpainting_multi(
+            edit_ops, input_path, output_path, fusion_method=fusion_method
+        )
+        processing_time = time.time() - start_time
+
+        # Return the processed audio file
+        if not os.path.exists(output_path):
+            raise HTTPException(
+                status_code=500, detail="Failed to generate output audio"
+            )
+
+        # Schedule delayed cleanup of files (30 minutes TTL)
+        background_tasks.add_task(delayed_cleanup, [input_path, output_path])
+
+        # Create paths for client to access files
+        output_url = f"/api/audio/{session_id}/output.wav"
+        input_url = f"/api/audio/{session_id}/input.wav"
+
+        # Choose response type based on parameter
+        if return_metadata:
+            # Return JSON with metadata and URL to download the processed file
+            response_data = {
+                "status": "success",
+                "input_url": input_url,
+                "output_url": output_url,
+                "processing_time": processing_time,
+                "edit_operations": edit_ops,
                 "details": processing_result
                 if isinstance(processing_result, (dict, list, str))
                 else "Processing completed successfully",

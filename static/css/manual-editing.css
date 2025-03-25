@@ -1,0 +1,148 @@
+/* 
+* manual-editing.css
+* Styles for manual editing mode
+*/
+
+/* Editor containers */
+.manual-editor-container {
+    margin-bottom: 2rem;
+}
+
+/* Waveform editor styles */
+.waveform-editor-container {
+    background-color: var(--color-secondary-light);
+    border-radius: var(--radius-md);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 1rem;
+    box-shadow: var(--shadow-subtle);
+}
+
+.dark .waveform-editor-container {
+    background-color: #2A2A2A;
+    border: 1px solid #444;
+}
+
+/* Token text editor styles */
+.token-editor-container {
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+.token-editor-input {
+    width: 100%;
+    resize: vertical;
+    min-height: 100px;
+    padding: 0.75rem;
+    font-family: inherit;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-gray);
+    transition: var(--transition-default);
+}
+
+.dark .token-editor-input {
+    background-color: #2A2A2A;
+    color: #F0F0F0;
+    border-color: #444;
+}
+
+.token-editor-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(91, 101, 41, 0.2);
+}
+
+.dark .token-editor-input:focus {
+    box-shadow: 0 0 0 2px rgba(157, 184, 89, 0.2);
+}
+
+.token-editor-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: hidden;
+}
+
+/* Playback control button */
+#waveformPlayButton {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    z-index: 10;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+}
+
+#waveformPlayButton:hover {
+    opacity: 1;
+}
+
+/* Token highlighting */
+.token-span {
+    transition: background-color 0.2s ease;
+    border-radius: 2px;
+}
+
+.token-selected {
+    background-color: rgba(91, 101, 41, 0.2);
+}
+
+.token-modified {
+    background-color: rgba(185, 28, 28, 0.2);
+    text-decoration: underline wavy rgba(185, 28, 28, 0.5);
+}
+
+.dark .token-selected {
+    background-color: rgba(157, 184, 89, 0.3);
+}
+
+.dark .token-modified {
+    background-color: rgba(220, 38, 38, 0.3);
+    text-decoration: underline wavy rgba(220, 38, 38, 0.5);
+}
+
+/* Edit mode selection */
+.edit-mode-selection {
+    margin-bottom: 1.5rem;
+}
+
+/* Loading overlay for tokenization */
+.tokenization-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    border-radius: var(--radius-md);
+}
+
+.dark .tokenization-loading {
+    background-color: rgba(26, 26, 26, 0.8);
+}
+
+/* Media query adjustments */
+@media (max-width: 640px) {
+    .waveform-editor-container {
+        height: 80px !important;
+    }
+    
+    .token-editor-input {
+        min-height: 80px;
+    }
+    
+    .edit-mode-selection .radio-group {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+}

@@ -10,6 +10,7 @@
     <link href="css/main.css" rel="stylesheet">
     <link href="css/components.css" rel="stylesheet">
     <link href="css/animations.css" rel="stylesheet">
+    <link href="css/manual-editing.css" rel="stylesheet">
     <!-- Favicon -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 200 200%22><style>@media(prefers-color-scheme:dark){.gray{fill:%23B0B0B0}.green{fill:%239DB859}}@media(prefers-color-scheme:light){.gray{fill:%23333333}.green{fill:%235DA831}}.red{fill:%23FF5252}</style><rect rx=%225%22 ry=%225%22 x=%2211.5%22 y=%2265%22 width=%2215%22 height=%2270%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%2238.5%22 y=%2240.5%22 width=%2215%22 height=%22119%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%2265.5%22 y=%2263%22 width=%2215%22 height=%2274%22 class=%22red%22 /><rect rx=%225%22 ry=%225%22 x=%2292.5%22 y=%2262.5%22 width=%2215%22 height=%2275%22 class=%22green%22 /><rect rx=%225%22 ry=%225%22 x=%22119.5%22 y=%2233%22 width=%2215%22 height=%22134%22 class=%22green%22 /><rect rx=%225%22 ry=%225%22 x=%22146.5%22 y=%2269%22 width=%2215%22 height=%2262%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%22173.5%22 y=%2237.5%22 width=%2215%22 height=%22115%22 class=%22gray%22 /></svg>">
 </head>
@@ -68,7 +69,7 @@
             </div>
 
             <!-- Input Method Selection -->
-            <div class="radio-group slide-in">
+            <div id="inputMethodSelection" class="radio-group slide-in">
                 <label class="radio-option">
                     <input type="radio" id="record" name="audioChoice" value="record" checked>
                     <span>Record a voice message</span>
@@ -77,6 +78,21 @@
                     <input type="radio" id="upload" name="audioChoice" value="upload">
                     <span>Upload a WAV file</span>
                 </label>
+            </div>
+
+            <!-- Edit Mode Selection (Initially Hidden) -->
+            <div id="editModeSelection" class="edit-mode-selection mb-6 slide-in hidden">
+                <h3 class="section-heading">Edit Mode</h3>
+                <div class="radio-group">
+                    <label class="radio-option">
+                        <input type="radio" id="manual-edit" name="editMode" value="manual" checked>
+                        <span>Manual editing</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" id="prompt-edit" name="editMode" value="prompt">
+                        <span>Prompt-based editing</span>
+                    </label>
+                </div>
             </div>
 
             <!-- Record Section -->
@@ -188,12 +204,15 @@
                     <p class="text-sm text-gray-500">Only WAV files are supported</p>
                 </div>
             </div>
-
+            
             <!-- Audio Preview -->
             <div id="audioPreview" class="mb-6 hidden fade-in">
                 <h3 class="section-heading">Audio Preview</h3>
                 <audio id="audioPlayer" controls class="audio-player"></audio>
             </div>
+
+            <!-- Manual Editor Container (will be populated by JS) -->
+            <div id="manualEditorContainer" class="hidden slide-in"></div>
 
             <!-- Edit Section -->
             <div id="editSection" class="mb-6 hidden slide-in">
@@ -293,10 +312,13 @@
 
     <!-- JavaScript Modules -->
     <script src="js/theme-controller.js"></script>
+    <script src="js/button-initializer.js"></script>
     <script src="js/audio-processor.js"></script>
     <script src="js/visualizer.js"></script>
     <script src="js/audio-recorder.js"></script>
     <script src="js/ui-controller.js"></script>
+    <script src="js/waveform-editor.js"></script>
+    <script src="js/token-text-editor.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

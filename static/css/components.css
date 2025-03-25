@@ -177,6 +177,7 @@
     color: var(--color-primary-light);
 }
 
+/* Control buttons base style */
 .control-btn {
     display: flex;
     align-items: center;
@@ -186,28 +187,38 @@
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
+    background-color: transparent;
 }
 
-.toggle-btn {
-    background-color: transparent;
+/* Play button (green) */
+.play-btn {
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
+}
+
+.play-btn:hover {
+    transform: scale(1.1);
+    background-color: rgba(91, 101, 41, 0.1);
+}
+
+/* Pause button (red) */
+.pause-btn {
     color: var(--color-error);
     border: 1px solid var(--color-error);
 }
 
-.toggle-btn:hover {
+.pause-btn:hover {
     transform: scale(1.1);
     background-color: rgba(220, 38, 38, 0.1);
 }
 
-.toggle-btn.play {
-    color: var(--color-primary);
-    border-color: var(--color-primary);
+/* Remove legacy classes that might interfere with new styling */
+.toggle-btn, .toggle-btn.play {
+    /* Reset any specific styles to avoid conflicts */
+    background-color: transparent;
 }
 
-.toggle-btn.play:hover {
-    background-color: rgba(91, 101, 41, 0.1);
-}
-
+/* Submit button */
 .submit-btn {
     background-color: var(--color-primary);
     color: var(--color-light);
@@ -223,16 +234,7 @@
     background-color: var(--color-primary-light);
 }
 
-.play-btn {
-    background-color: var(--color-primary);
-    color: var(--color-light);
-}
-
-.play-btn:hover {
-    transform: scale(1.1);
-    background-color: var(--color-primary-light);
-}
-
+/* Trash button */
 .trash-btn {
     background-color: #f87171;
     color: var(--color-light);

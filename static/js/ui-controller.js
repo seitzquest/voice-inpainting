@@ -5,40 +5,73 @@
 
 class UIController {
     constructor() {
-        // DOM sections
-        this.recordSection = document.getElementById('recordSection');
-        this.uploadSection = document.getElementById('uploadSection');
-        this.audioPreview = document.getElementById('audioPreview');
-        this.editSection = document.getElementById('editSection');
-        this.resultSection = document.getElementById('resultSection');
-        this.loadingIndicator = document.getElementById('loadingIndicator');
-        this.errorMessage = document.getElementById('errorMessage');
-        this.errorText = document.getElementById('errorText');
-        this.backButtonContainer = document.getElementById('backButtonContainer');
+        // Store references to all UI sections
+        this.sections = {
+            // Step 1: Record/Upload
+            recordSection: document.getElementById('recordSection'),
+            uploadSection: document.getElementById('uploadSection'),
+            inputMethodSelection: document.getElementById('inputMethodSelection'),
+        
+            // Step 2: Edit
+            audioPreview: document.getElementById('audioPreview'),
+            editModeSelection: document.getElementById('editModeSelection'), // Now using the pre-defined div
+            manualEditor: document.getElementById('manualEditorContainer'),
+            promptEditor: document.getElementById('editSection'),
+            
+            // Step 3: Result
+            resultSection: document.getElementById('resultSection'),
+            
+            // Common elements
+            backButtonContainer: document.getElementById('backButtonContainer'),
+            loadingIndicator: document.getElementById('loadingIndicator'),
+            errorMessage: document.getElementById('errorMessage'),
+            errorText: document.getElementById('errorText')
+        };
         
         // Recording state UI elements
-        this.preRecordingState = document.getElementById('preRecordingState');
-        this.activeRecordingState = document.getElementById('activeRecordingState');
-        this.pausedRecordingState = document.getElementById('pausedRecordingState');
+        this.recordingStates = {
+            preRecording: document.getElementById('preRecordingState'),
+            activeRecording: document.getElementById('activeRecordingState'),
+            pausedRecording: document.getElementById('pausedRecordingState')
+        };
         
         // Audio elements
-        this.audioPlayer = document.getElementById('audioPlayer');
-        this.processedAudio = document.getElementById('processedAudio');
-        this.previewPlayer = document.getElementById('previewPlayer');
+        this.audioElements = {
+            audioPlayer: document.getElementById('audioPlayer'),
+            processedAudio: document.getElementById('processedAudio'),
+            previewPlayer: document.getElementById('previewPlayer')
+        };
         
         // Text and status display elements
-        this.fileName = document.getElementById('fileName');
-        this.editPrompt = document.getElementById('editPrompt');
-        this.editPromptDisplay = document.getElementById('editPromptDisplay');
-        this.processingDetails = document.getElementById('processingDetails');
+        this.textElements = {
+            fileName: document.getElementById('fileName'),
+            editPrompt: document.getElementById('editPrompt'),
+            editPromptDisplay: document.getElementById('editPromptDisplay'),
+            processingDetails: document.getElementById('processingDetails')
+        };
         
         // Progress steps
         this.progressSteps = document.querySelectorAll('.progress-step');
         
-        // State tracking
-        this.currentStep = 1;
-        this.isEditingProcessedAudio = false;
-        this.processedAudioBlob = null;
+        this.tokenizationState = {
+            inProgress: false,
+            cancelled: false
+        };        
+
+        // Application state
+        this.state = {
+            currentStep: 1,
+            editMode: 'manual', // 'manual' or 'prompt'
+            isEditingProcessedAudio: false,
+            processedAudioBlob: null,
+            audioBlob: null,
+            tokenData: null,
+            transcribedText: null,
+            
+            // Editors
+            waveformEditor: null,
+            tokenTextEditor: null
+        };
     }
     
     /**
@@ -46,17 +79,194 @@ class UIController {
      */
     init() {
         // Set initial state
-        this.updateProgress(1);
+        this.goToStep(1);
         
         // Bind radio button change events for input method selection
         document.querySelectorAll('input[name="audioChoice"]').forEach(radio => {
             radio.addEventListener('change', () => this.handleInputMethodChange(radio.value));
         });
         
+        // Bind radio button change events for edit mode selection
+        document.querySelectorAll('input[name="editMode"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.checked) {
+                    this.setEditMode(radio.value);
+                }
+            });
+        });
+        
         // Show the appropriate section based on default selection
         this.handleInputMethodChange(
             document.querySelector('input[name="audioChoice"]:checked').value
         );
+        
+        console.log('UI Controller initialized');
+    }
+    
+    /**
+     * Navigate to a specific step
+     * @param {number} step - The step to navigate to (1, 2, or 3)
+     */
+    goToStep(step) {
+        this.state.currentStep = step;
+        
+        // Hide all sections first
+        this.hideAllSections();
+        
+        // Update progress indicator
+        this.updateProgress(step);
+        
+        // Show appropriate sections based on step
+        switch (step) {
+            case 1:
+                this.setupStep1();
+                break;
+            case 2:
+                this.setupStep2();
+                break;
+            case 3:
+                this.setupStep3();
+                break;
+        }
+    }
+    
+    /**
+     * Set up Step 1: Record/Upload
+     */
+    setupStep1() {
+        // Clean up any resources from previous steps
+        this.cleanupEditors();
+        
+        // Clear state data for editing
+        this.state.tokenData = null;
+        this.state.transcribedText = null;
+        
+        // Show input radio group
+        if (this.sections.inputMethodSelection) {
+            this.sections.inputMethodSelection.classList.remove('hidden');
+            this.sections.inputMethodSelection.style.display = ''; // Clear any inline display style
+        }
+        
+        // Show the appropriate section based on selected input method
+        if (document.getElementById('record').checked) {
+            this.sections.recordSection.classList.remove('hidden');
+        } else {
+            this.sections.uploadSection.classList.remove('hidden');
+        }
+        
+        // Reset recording UI state
+        this.recordingStates.preRecording.classList.remove('hidden');
+        this.recordingStates.activeRecording.classList.add('hidden');
+        this.recordingStates.pausedRecording.classList.add('hidden');
+        
+        // Reset form elements
+        this.textElements.editPrompt.value = '';
+        this.textElements.fileName.textContent = '';
+        this.textElements.fileName.classList.add('hidden');
+        
+        // Reset file input
+        document.getElementById('fileUpload').value = '';
+    }
+    
+    /**
+     * Set up Step 2: Edit
+     */
+    setupStep2() {
+        // Show back button
+        this.sections.backButtonContainer.classList.remove('hidden');
+        
+        // Make sure input method selection is hidden to fix the bug
+        if (this.sections.inputMethodSelection) {
+            this.sections.inputMethodSelection.classList.add('hidden');
+            this.sections.inputMethodSelection.style.display = 'none'; // Force hide with inline style
+        }
+        
+        // Show edit mode selection
+        if (this.sections.editModeSelection) {
+            this.sections.editModeSelection.classList.remove('hidden');
+            
+            // Set the correct radio button based on current state
+            const manualRadio = document.getElementById('manual-edit');
+            const promptRadio = document.getElementById('prompt-edit');
+            
+            if (this.state.editMode === 'manual') {
+                manualRadio.checked = true;
+                promptRadio.checked = false;
+            } else {
+                manualRadio.checked = false;
+                promptRadio.checked = true;
+            }
+        }
+
+        // Show audio preview if we have audio
+        if (this.state.audioBlob) {
+            this.sections.audioPreview.classList.remove('hidden');
+            
+            // Set audio player source if needed
+            if (!this.audioElements.audioPlayer.src && this.state.audioBlob) {
+                this.audioElements.audioPlayer.src = URL.createObjectURL(this.state.audioBlob);
+            }
+        }
+        
+        // Set up based on edit mode
+        this.setEditMode(this.state.editMode);
+    }
+    
+    /**
+     * Set up Step 3: Result
+     */
+    setupStep3() {
+        // Show result section
+        this.sections.resultSection.classList.remove('hidden');
+    }
+    
+    /**
+     * Hide all UI sections
+     */
+    hideAllSections() {
+        // Hide all main sections
+        this.sections.recordSection.classList.add('hidden');
+        this.sections.uploadSection.classList.add('hidden');
+        this.sections.audioPreview.classList.add('hidden');
+        this.sections.resultSection.classList.add('hidden');
+        this.sections.backButtonContainer.classList.add('hidden');
+        
+        // Hide input selection radio group - use both class and inline style
+        if (this.sections.inputMethodSelection) {
+            this.sections.inputMethodSelection.classList.add('hidden');
+            this.sections.inputMethodSelection.style.display = 'none'; // Force hide with inline style
+        }
+        
+        // Hide error message
+        this.sections.errorMessage.classList.add('hidden');
+        
+        // Hide edit mode selection
+        if (this.sections.editModeSelection) {
+            this.sections.editModeSelection.classList.add('hidden');
+        }
+        
+        // Hide editors
+        if (this.sections.manualEditor) {
+            this.sections.manualEditor.classList.add('hidden');
+        }
+        this.sections.promptEditor.classList.add('hidden');
+    }
+    
+    // Remove the createEditModeSelection method since we're now using the pre-defined element in HTML
+    
+    /**
+     * Create or get the manual editor container
+     * @returns {HTMLElement} The manual editor container
+     */
+    getManualEditorContainer() {
+        if (!this.sections.manualEditor) {
+            const container = document.createElement('div');
+            container.id = 'manualEditorContainer';
+            container.className = 'manual-editor-container mb-6 slide-in';
+            this.sections.manualEditor = container;
+        }
+        
+        return this.sections.manualEditor;
     }
     
     /**
@@ -64,14 +274,16 @@ class UIController {
      * @param {string} method - The selected input method ('record' or 'upload')
      */
     handleInputMethodChange(method) {
+        // Only applicable in step 1
+        if (this.state.currentStep !== 1) return;
+        
         if (method === 'record') {
-            this.recordSection.classList.remove('hidden');
-            this.uploadSection.classList.add('hidden');
+            this.sections.recordSection.classList.remove('hidden');
+            this.sections.uploadSection.classList.add('hidden');
         } else {
-            this.recordSection.classList.add('hidden');
-            this.uploadSection.classList.remove('hidden');
+            this.sections.recordSection.classList.add('hidden');
+            this.sections.uploadSection.classList.remove('hidden');
         }
-        this.resetUI();
     }
     
     /**
@@ -79,8 +291,6 @@ class UIController {
      * @param {number} step - Current step (1, 2, or 3)
      */
     updateProgress(step) {
-        this.currentStep = step;
-        
         // Clear all line-active classes first
         this.progressSteps.forEach(step => {
             step.classList.remove('line-active');
@@ -112,40 +322,471 @@ class UIController {
                 progressStep.classList.add('line-active');
             }
         });
-        
-        // Handle visibility based on current step
-        this.updateUIForCurrentStep(step);
     }
     
     /**
-     * Update UI elements based on current step
-     * @param {number} step - Current step (1, 2, or 3)
+     * Set the editing mode and update UI
+     * @param {string} mode - Edit mode ('manual' or 'prompt')
      */
-    updateUIForCurrentStep(step) {
-        const radioGroup = document.querySelector('.radio-group');
+    setEditMode(mode) {
+        const previousMode = this.state.editMode;
+        this.state.editMode = mode;
         
-        if (step === 1) {
-            // In step 1, show the radio group and ensure it's visible
-            radioGroup.classList.remove('hidden');
-            radioGroup.style.display = ''; // Clear any inline display:none
+        // Update radio buttons if they exist
+        const manualRadio = document.getElementById('manual-edit');
+        const promptRadio = document.getElementById('prompt-edit');
+        
+        if (manualRadio && promptRadio) {
+            if (mode === 'manual') {
+                manualRadio.checked = true;
+                promptRadio.checked = false;
+            } else {
+                manualRadio.checked = false;
+                promptRadio.checked = true;
+            }
+        }
+        
+        // Only proceed if on step 2
+        if (this.state.currentStep !== 2) return;
+        
+        // Check if we should cancel tokenization
+        if (previousMode === 'manual' && mode === 'prompt' && this.tokenizationState.inProgress) {
+            console.log('Cancelling tokenization due to edit mode change from manual to prompt');
+            this.tokenizationState.cancelled = true;
+            this.showLoading(false);  // Hide loading indicator immediately
+        }
+        
+        // Make sure input method selection is hidden to fix the bug
+        if (this.sections.inputMethodSelection) {
+            this.sections.inputMethodSelection.classList.add('hidden');
+            this.sections.inputMethodSelection.style.display = 'none'; // Force hide with inline style
+        }
+        
+        if (mode === 'manual') {
+            // Show manual editor, hide prompt editor
+            const manualEditor = this.getManualEditorContainer();
+            manualEditor.classList.remove('hidden');
+            this.sections.promptEditor.classList.add('hidden');
+            
+            // Hide audio preview (we'll show waveform instead)
+            this.sections.audioPreview.classList.add('hidden');
+            
+            // If we already have tokenized data, build the editor
+            if (this.state.tokenData && this.state.transcribedText) {
+                this.buildManualEditor();
+            } else if (this.audioElements.audioPlayer.src && !this.tokenizationState.inProgress) {
+                // If we have audio but no token data, fetch it
+                // Only start new tokenization if there isn't one already in progress
+                this.tokenizeAudio();
+            }
         } else {
-            // In any other step, hide the radio group
-            radioGroup.classList.add('hidden');
-            radioGroup.style.display = 'none'; // Force hide with inline style
+            // Show prompt editor and audio preview, hide manual editor
+            if (this.sections.manualEditor) {
+                this.sections.manualEditor.classList.add('hidden');
+            }
+            this.sections.promptEditor.classList.remove('hidden');
+            this.sections.audioPreview.classList.remove('hidden');
+            
+            // Clean up manual editor resources
+            this.cleanupEditors();
         }
     }
     
     /**
-     * Display loading indicator
+     * Tokenize the audio and get transcription data
+     */
+    async tokenizeAudio() {
+        // Show loading indicator
+        this.showLoading(true);
+        
+        // Set tokenization state
+        this.tokenizationState.inProgress = true;
+        this.tokenizationState.cancelled = false;
+        
+        try {
+            // Get the current audio blob
+            const audioUrl = this.audioElements.audioPlayer.src;
+            const response = await fetch(audioUrl);
+            const audioBlob = await response.blob();
+            
+            // Check if tokenization was cancelled before proceeding
+            if (this.tokenizationState.cancelled) {
+                console.log('Tokenization cancelled');
+                return;
+            }
+            
+            // Tokenize the audio
+            const tokenizationResult = await AudioProcessor.tokenizeAudio(audioBlob);
+            
+            // Check again if tokenization was cancelled
+            if (this.tokenizationState.cancelled) {
+                console.log('Tokenization cancelled after API call');
+                return;
+            }
+            
+            // Store token data
+            this.state.tokenData = tokenizationResult.tokens;
+            this.state.transcribedText = tokenizationResult.text;
+            
+            // Check for both conditions: edit mode still 'manual' and not cancelled
+            if (this.state.editMode === 'manual' && !this.tokenizationState.cancelled) {
+                console.log('Building manual editor after successful tokenization');
+                // Build the manual editor
+                this.buildManualEditor();
+            } else if (!this.tokenizationState.cancelled) {
+                // If not cancelled but edit mode changed
+                console.log('Edit mode changed during tokenization, skipping manual editor build');
+                // Make sure manual editor container is hidden
+                if (this.sections.manualEditor) {
+                    this.sections.manualEditor.classList.add('hidden');
+                }
+                // Make sure prompt editor is visible since we're now in prompt mode
+                this.sections.promptEditor.classList.remove('hidden');
+                this.sections.audioPreview.classList.remove('hidden');
+            } else {
+                // If cancelled, we don't need to update UI
+                console.log('Tokenization cancelled, skipping UI updates');
+            }
+        } catch (error) {
+            // Only show error if tokenization wasn't cancelled
+            if (!this.tokenizationState.cancelled) {
+                console.error('Error tokenizing audio:', error);
+                this.showError('Failed to tokenize audio: ' + error.message);
+                
+                // Fall back to prompt-based editing
+                this.setEditMode('prompt');
+            }
+        } finally {
+            // Reset tokenization in-progress flag
+            this.tokenizationState.inProgress = false;
+            
+            // Hide loading indicator only if not cancelled (to avoid UI flicker)
+            if (!this.tokenizationState.cancelled) {
+                this.showLoading(false);
+            }
+        }
+    }
+    
+    /**
+     * Build the manual editor UI
+     */
+    buildManualEditor() {
+        // First check if we're still in manual mode - if not, don't build the editor
+        if (this.state.editMode !== 'manual') {
+            console.log('Skipping manual editor build because mode has changed to:', this.state.editMode);
+            return;
+        }
+        
+        // Get or create the manual editor container
+        const manualEditor = this.getManualEditorContainer();
+        
+        // Clear any existing content
+        manualEditor.innerHTML = '';
+        
+        // Add header
+        const header = document.createElement('h3');
+        header.className = 'section-heading';
+        header.textContent = 'Manual Editing';
+        manualEditor.appendChild(header);
+        
+        // Add instructions
+        const instructions = document.createElement('p');
+        instructions.className = 'text-sm text-gray-600 mb-4';
+        instructions.textContent = 'Edit the text below to modify the audio. Select text to highlight the corresponding sections in the waveform.';
+        manualEditor.appendChild(instructions);
+        
+        // Create waveform editor
+        this.state.waveformEditor = new WaveformEditor(manualEditor);
+        this.state.waveformEditor.initialize();
+        
+        // Load audio into waveform editor
+        this.state.waveformEditor.loadAudioElement(this.audioElements.audioPlayer);
+        
+        // Create token text editor
+        this.state.tokenTextEditor = new TokenTextEditor(manualEditor);
+        this.state.tokenTextEditor.initialize();
+        
+        // Set token data and link editors
+        this.state.tokenTextEditor.setWaveformEditor(this.state.waveformEditor);
+        this.state.tokenTextEditor.setTokenData(this.state.tokenData, this.state.transcribedText);
+        this.state.waveformEditor.setTokenData(this.state.tokenData);
+        
+        // Add process button
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'flex justify-center mt-6';
+        
+        const processButton = document.createElement('button');
+        processButton.id = 'manualProcessButton';
+        processButton.className = 'btn btn-primary';
+        processButton.textContent = 'Process Edits';
+        processButton.addEventListener('click', () => this.processManualEdits());
+        
+        buttonContainer.appendChild(processButton);
+        manualEditor.appendChild(buttonContainer);
+        
+        // Show the manual editor
+        manualEditor.classList.remove('hidden');
+    }
+    
+    /**
+     * Clean up editor resources
+     */
+    cleanupEditors() {
+        // Clean up waveform editor
+        if (this.state.waveformEditor) {
+            this.state.waveformEditor.cleanup();
+            this.state.waveformEditor = null;
+        }
+        
+        // Clean up token text editor
+        if (this.state.tokenTextEditor) {
+            this.state.tokenTextEditor.cleanup();
+            this.state.tokenTextEditor = null;
+        }
+        
+        // Clear the manual editor container
+        if (this.sections.manualEditor) {
+            this.sections.manualEditor.innerHTML = '';
+        }
+    }
+    
+    /**
+     * Clean up audio elements (revoke object URLs)
+     */
+    cleanupAudioElements() {
+        if (this.audioElements.audioPlayer.src) {
+            URL.revokeObjectURL(this.audioElements.audioPlayer.src);
+            this.audioElements.audioPlayer.src = '';
+        }
+        
+        if (this.audioElements.previewPlayer.src) {
+            URL.revokeObjectURL(this.audioElements.previewPlayer.src);
+            this.audioElements.previewPlayer.src = '';
+        }
+        
+        if (this.audioElements.processedAudio.src) {
+            URL.revokeObjectURL(this.audioElements.processedAudio.src);
+            this.audioElements.processedAudio.src = '';
+        }
+    }
+    
+    /**
+     * Show recording UI in the active state
+     */
+    showRecordingUI() {
+        this.recordingStates.preRecording.classList.add('hidden');
+        this.recordingStates.activeRecording.classList.remove('hidden');
+        this.recordingStates.pausedRecording.classList.add('hidden');
+    }
+    
+    /**
+     * Show recording UI in the paused state
+     */
+    showPausedRecordingUI() {
+        this.recordingStates.activeRecording.classList.add('hidden');
+        this.recordingStates.pausedRecording.classList.remove('hidden');
+    }
+    
+    /**
+     * Go to edit step with the provided audio blob
+     * @param {Blob} audioBlob - Audio blob to use
+     */
+    goToEditStepWithAudio(audioBlob) {
+        // Store the audio blob
+        this.state.audioBlob = audioBlob;
+        
+        // Create URL for audio preview
+        if (this.audioElements.audioPlayer.src) {
+            URL.revokeObjectURL(this.audioElements.audioPlayer.src);
+        }
+        this.audioElements.audioPlayer.src = URL.createObjectURL(audioBlob);
+        
+        // Go to step 2
+        this.goToStep(2);
+    }
+    
+    /**
+     * Go to result step with processed audio
+     * @param {Blob} processedBlob - Processed audio blob
+     * @param {string} prompt - Edit prompt used
+     * @param {Object} metadata - Additional processing metadata
+     */
+    goToResultStep(processedBlob, prompt, metadata = {}) {
+        this.state.processedAudioBlob = processedBlob;
+        
+        // Display just the processed audio
+        if (this.audioElements.processedAudio.src) {
+            URL.revokeObjectURL(this.audioElements.processedAudio.src);
+        }
+        this.audioElements.processedAudio.src = URL.createObjectURL(processedBlob);
+        
+        // Update text fields
+        this.textElements.editPromptDisplay.textContent = `Edit prompt: "${prompt}"`;
+        this.textElements.processingDetails.textContent = metadata.processing_time ? 
+            `Processing time: ${metadata.processing_time.toFixed(2)}s` : '';
+        
+        // Go to step 3
+        this.goToStep(3);
+    }
+    
+    /**
+     * Process manual edits
+     */
+    async processManualEdits() {
+        // Get edit operations from the token text editor
+        const editOperations = this.state.tokenTextEditor.getEditOperations();
+        
+        console.log('Edit operations:', editOperations);
+        
+        // If no edits, show error
+        if (editOperations.length === 0) {
+            this.showError('No edits detected. Please modify the text to create edits.');
+            return;
+        }
+        
+        // Show loading indicator
+        this.showLoading(true);
+        
+        try {
+            // Get the current audio blob
+            const audioUrl = this.audioElements.audioPlayer.src;
+            const response = await fetch(audioUrl);
+            const audioBlob = await response.blob();
+            
+            // Process the audio with multi-edit API
+            const result = await AudioProcessor.processAudioMulti(audioBlob, editOperations);
+            
+            // Create summary of edits for display
+            const editSummary = editOperations.map(op => 
+                `"${op.original_text}" → "${op.edited_text}"`
+            ).join(', ');
+            
+            // Update UI with results
+            this.goToResultStep(result.processedBlob, editSummary, result.metadata);
+            
+            // Setup download button
+            document.getElementById('downloadButton').onclick = () => {
+                const a = document.createElement('a');
+                a.href = document.getElementById('processedAudio').src;
+                a.download = 'processed_audio.wav';
+                a.click();
+            };
+        } catch (error) {
+            console.error('Error processing edits:', error);
+            this.showError('Failed to process edits: ' + error.message);
+        } finally {
+            // Hide loading indicator
+            this.showLoading(false);
+        }
+    }
+    
+    /**
+     * Process audio with the edit prompt
+     */
+    async processAudio() {
+        if (!this.state.audioBlob) {
+            this.showError('No audio file available for processing.');
+            return;
+        }
+        
+        const prompt = this.textElements.editPrompt.value.trim();
+        if (!prompt) {
+            this.showError('Please enter an edit prompt.');
+            return;
+        }
+        
+        this.showLoading(true);
+        
+        try {
+            // Process the audio
+            const result = await AudioProcessor.processAudio(this.state.audioBlob, prompt);
+            
+            // Update UI with results
+            this.goToResultStep(result.processedBlob, prompt, result.metadata);
+            
+            // Setup download button
+            document.getElementById('downloadButton').onclick = () => {
+                const a = document.createElement('a');
+                a.href = document.getElementById('processedAudio').src;
+                a.download = 'processed_audio.wav';
+                a.click();
+            };
+            
+        } catch (err) {
+            this.showError(`Error processing audio: ${err.message}`);
+            console.error('Processing error:', err);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+    
+    /**
+     * Go back to step 1
+     */
+    resetToStep1() {
+        // Cancel any ongoing tokenization
+        if (this.tokenizationState.inProgress) {
+            console.log('Cancelling ongoing tokenization');
+            this.tokenizationState.cancelled = true;
+            
+            // Hide loading indicator immediately
+            this.showLoading(false);
+        }
+        
+        // Clean up audio resources
+        window.audioRecorder.cleanup();
+        this.cleanupAudioElements();
+        
+        // Reset state
+        this.state.audioBlob = null;
+        this.state.processedAudioBlob = null;
+        this.state.tokenData = null;
+        this.state.transcribedText = null;
+        
+        // Go to step 1
+        this.goToStep(1);
+    }
+    
+    /**
+     * Go back to edit step to change the prompt
+     */
+    changePrompt() {
+        // Go back to step 2 with current mode
+        this.goToStep(2);
+    }
+    
+    /**
+     * Use the processed result as the new input audio
+     */
+    useProcessedResult() {
+        // Use the processed audio as the new input
+        if (this.state.processedAudioBlob) {
+            this.state.audioBlob = this.state.processedAudioBlob;
+            this.audioElements.audioPlayer.src = URL.createObjectURL(this.state.processedAudioBlob);
+        }
+        
+        // Clear the prompt
+        this.textElements.editPrompt.value = '';
+        
+        // Reset token data since the audio has changed
+        this.state.tokenData = null;
+        this.state.transcribedText = null;
+        
+        // Go to step 2
+        this.goToStep(2);
+    }
+    
+    /**
+     * Show loading indicator
      * @param {boolean} show - Whether to show or hide the loading indicator
      */
     showLoading(show) {
         if (show) {
-            this.loadingIndicator.classList.remove('hidden');
+            this.sections.loadingIndicator.classList.remove('hidden');
             document.getElementById('processButton').disabled = true;
             document.getElementById('processButton').classList.add('opacity-50');
         } else {
-            this.loadingIndicator.classList.add('hidden');
+            this.sections.loadingIndicator.classList.add('hidden');
             document.getElementById('processButton').disabled = false;
             document.getElementById('processButton').classList.remove('opacity-50');
         }
@@ -156,8 +797,8 @@ class UIController {
      * @param {string} message - Error message to display
      */
     showError(message) {
-        this.errorText.textContent = message;
-        this.errorMessage.classList.remove('hidden');
+        this.sections.errorText.textContent = message;
+        this.sections.errorMessage.classList.remove('hidden');
         
         // Auto-hide error after 5 seconds
         setTimeout(() => {
@@ -169,151 +810,7 @@ class UIController {
      * Hide error message
      */
     hideError() {
-        this.errorMessage.classList.add('hidden');
-    }
-    
-    /**
-     * Reset UI to initial state
-     */
-    resetUI() {
-        // Hide all sections except the first step
-        this.audioPreview.classList.add('hidden');
-        this.editSection.classList.add('hidden');
-        this.resultSection.classList.add('hidden');
-        this.backButtonContainer.classList.add('hidden');
-        this.hideError();
-        
-        // Reset recording UI
-        this.preRecordingState.classList.remove('hidden');
-        this.activeRecordingState.classList.add('hidden');
-        this.pausedRecordingState.classList.add('hidden');
-        
-        // Reset form elements
-        this.editPrompt.value = '';
-        this.fileName.textContent = '';
-        this.fileName.classList.add('hidden');
-        
-        // Reset audio elements
-        this.cleanupAudioElements();
-        
-        // Reset file input to allow the same file to be selected again
-        document.getElementById('fileUpload').value = '';
-        
-        // Reset state tracking
-        this.isEditingProcessedAudio = false;
-        this.processedAudioBlob = null;
-        
-        this.updateProgress(1);
-    }
-    
-    /**
-     * Clean up audio elements (revoke object URLs)
-     */
-    cleanupAudioElements() {
-        if (this.audioPlayer.src) {
-            URL.revokeObjectURL(this.audioPlayer.src);
-            this.audioPlayer.src = '';
-        }
-        
-        if (this.previewPlayer.src) {
-            URL.revokeObjectURL(this.previewPlayer.src);
-            this.previewPlayer.src = '';
-        }
-        
-        if (this.processedAudio.src) {
-            URL.revokeObjectURL(this.processedAudio.src);
-            this.processedAudio.src = '';
-        }
-    }
-    
-    /**
-     * Advance to step 2 (edit) with the provided audio blob
-     * @param {Blob} audioBlob - Audio blob to use
-     */
-    goToEditStep(audioBlob) {
-        // Create URL for audio preview
-        if (this.audioPlayer.src) {
-            URL.revokeObjectURL(this.audioPlayer.src);
-        }
-        this.audioPlayer.src = URL.createObjectURL(audioBlob);
-        
-        // Show edit sections and back button
-        this.audioPreview.classList.remove('hidden');
-        this.editSection.classList.remove('hidden');
-        this.backButtonContainer.classList.remove('hidden');
-        
-        // Hide step 1 sections
-        this.recordSection.classList.add('hidden');
-        this.uploadSection.classList.add('hidden');
-        
-        // Update progress
-        this.updateProgress(2);
-    }
-    
-    /**
-     * Advance to step 3 (results) with processed audio
-     * @param {Blob} processedBlob - Processed audio blob
-     * @param {string} prompt - Edit prompt used
-     * @param {Object} metadata - Additional processing metadata
-     */
-    goToResultStep(processedBlob, prompt, metadata = {}) {
-        this.processedAudioBlob = processedBlob;
-        
-        // Display just the processed audio
-        if (this.processedAudio.src) {
-            URL.revokeObjectURL(this.processedAudio.src);
-        }
-        this.processedAudio.src = URL.createObjectURL(processedBlob);
-        
-        // Update text fields
-        this.editPromptDisplay.textContent = `Edit prompt: "${prompt}"`;
-        this.processingDetails.textContent = metadata.processing_time ? 
-            `Processing time: ${metadata.processing_time.toFixed(2)}s` : '';
-        
-        // Hide sections
-        this.audioPreview.classList.add('hidden');
-        this.editSection.classList.add('hidden');
-        this.backButtonContainer.classList.add('hidden');
-        
-        // Show result section
-        this.resultSection.classList.remove('hidden');
-        this.updateProgress(3);
-    }
-    
-    /**
-     * Go back to step 1
-     */
-    resetToStep1() {
-        this.resetUI();
-        
-        // Ensure we clean up recording resources
-        window.audioRecorder.cleanup();
-        
-        // Show appropriate section based on selected input method
-        if (document.getElementById('record').checked) {
-            this.recordSection.classList.remove('hidden');
-            this.uploadSection.classList.add('hidden');
-        } else {
-            this.recordSection.classList.add('hidden');
-            this.uploadSection.classList.remove('hidden');
-        }
-    }
-    
-    /**
-     * Update recording UI to show recording in progress
-     */
-    showRecordingUI() {
-        this.preRecordingState.classList.add('hidden');
-        this.activeRecordingState.classList.remove('hidden');
-        this.pausedRecordingState.classList.add('hidden');
-    }
-    
-    /**
-     * Update recording UI to show paused state
-     */
-    showPausedRecordingUI() {
-        this.activeRecordingState.classList.add('hidden');
-        this.pausedRecordingState.classList.remove('hidden');
+        this.sections.errorMessage.classList.add('hidden');
     }
     
     /**
@@ -321,7 +818,7 @@ class UIController {
      * @param {Blob} blob - The processed audio blob
      */
     setProcessedAudio(blob) {
-        this.processedAudioBlob = blob;
+        this.state.processedAudioBlob = blob;
     }
     
     /**
@@ -329,23 +826,7 @@ class UIController {
      * @returns {Blob|null} - The processed audio blob or null
      */
     getProcessedAudio() {
-        return this.processedAudioBlob;
-    }
-    
-    /**
-     * Set whether we're editing processed audio
-     * @param {boolean} isEditing - Whether we're editing processed audio
-     */
-    setEditingProcessedAudio(isEditing) {
-        this.isEditingProcessedAudio = isEditing;
-    }
-    
-    /**
-     * Check if we're editing processed audio
-     * @returns {boolean} - Whether we're editing processed audio
-     */
-    isEditingProcessed() {
-        return this.isEditingProcessedAudio;
+        return this.state.processedAudioBlob;
     }
 }
 

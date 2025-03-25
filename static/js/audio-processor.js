@@ -165,7 +165,36 @@ class AudioProcessor {
     }
     
     /**
-     * Process audio with the server API
+     * Tokenize audio to get token metadata
+     * @param {Blob} audioBlob - Audio blob to tokenize
+     * @returns {Promise<Object>} - Object with text and token metadata
+     */
+    static async tokenizeAudio(audioBlob) {
+        // Create a File object from Blob with proper extension
+        const audioFile = new File([audioBlob], "input.wav", { 
+            type: "audio/wav",
+            lastModified: new Date().getTime()
+        });
+        
+        const formData = new FormData();
+        formData.append('audio', audioFile);
+        
+        console.log("Sending file for tokenization:", audioFile.name, audioFile.type, audioFile.size, "bytes");
+        
+        const response = await fetch('/api/tokenize', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+        }
+        
+        return await response.json();
+    }
+    
+    /**
+     * Process audio with the server API (original prompt-based method)
      * @param {Blob} audioBlob - Audio blob to process
      * @param {string} prompt - Processing instructions
      * @returns {Promise<Object>} - Object with processedBlob and metadata
@@ -188,6 +217,66 @@ class AudioProcessor {
         console.log("Sending file:", audioFile.name, audioFile.type, audioFile.size, "bytes");
         
         const response = await fetch('/api/process', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+        }
+        
+        // Check if response includes JSON metadata
+        let processedBlob;
+        let processingMetadata = {};
+        
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            // Handle JSON response with metadata
+            processingMetadata = await response.json();
+            
+            if (processingMetadata.output_url) {
+                // Fetch the audio file separately
+                const audioResponse = await fetch(processingMetadata.output_url);
+                processedBlob = await audioResponse.blob();
+            } else {
+                throw new Error('No output audio URL in response');
+            }
+        } else {
+            // Direct audio blob response
+            processedBlob = await response.blob();
+        }
+        
+        return {
+            processedBlob,
+            metadata: processingMetadata
+        };
+    }
+    
+    /**
+     * Process audio with the multi-edit API (for manual editing)
+     * @param {Blob} audioBlob - Audio blob to process
+     * @param {Array} editOperations - Array of edit operations
+     * @returns {Promise<Object>} - Object with processedBlob and metadata
+     */
+    static async processAudioMulti(audioBlob, editOperations) {
+        // Ensure we have a proper WAV file with correct filename extension
+        const formData = new FormData();
+        
+        // Create a File object from Blob with proper extension
+        const audioFile = new File([audioBlob], "input.wav", { 
+            type: "audio/wav",
+            lastModified: new Date().getTime()
+        });
+        
+        formData.append('audio', audioFile);
+        formData.append('edit_operations', JSON.stringify(editOperations));
+        formData.append('return_metadata', 'true');  // Request JSON response
+        
+        // Log information about the file being sent
+        console.log("Sending file for multi-edit:", audioFile.name, audioFile.type, audioFile.size, "bytes");
+        console.log("Edit operations:", editOperations);
+        
+        const response = await fetch('/api/process-multi', {
             method: 'POST',
             body: formData
         });

@@ -44,13 +44,17 @@ class VoiceInpaintingApp {
         this.fileUpload.addEventListener('change', () => this.handleFileUpload());
         
         // Processing
-        this.processButton.addEventListener('click', () => this.processAudio());
+        this.processButton.addEventListener('click', () => window.uiController.processAudio());
         
         // Navigation and control buttons
         this.resetAudioButton.addEventListener('click', () => window.uiController.resetToStep1());
-        this.changePromptButton.addEventListener('click', () => this.changePrompt());
-        this.useResultButton.addEventListener('click', () => this.useProcessedResult());
-        this.startOverButton.addEventListener('click', () => this.confirmStartOver());
+        this.changePromptButton.addEventListener('click', () => window.uiController.changePrompt());
+        this.useResultButton.addEventListener('click', () => window.uiController.useProcessedResult());
+        this.startOverButton.addEventListener('click', () => {
+            if (confirm('Are you sure you want to start over? Your current audio and edits will be lost.')) {
+                window.uiController.resetToStep1();
+            }
+        });
         
         // Audio ended events
         this.previewPlayer.addEventListener('ended', () => this.resetPlayButton());
@@ -93,8 +97,9 @@ class VoiceInpaintingApp {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
-            this.pauseRecordingBtn.style.color = 'var(--color-primary)';
-            this.pauseRecordingBtn.style.borderColor = 'var(--color-primary)';
+            // Use standard play button style
+            this.pauseRecordingBtn.classList.remove('pause-btn');
+            this.pauseRecordingBtn.classList.add('play-btn');
         } else {
             // Show pause button (pause icon)
             this.pauseRecordingBtn.innerHTML = `
@@ -102,8 +107,9 @@ class VoiceInpaintingApp {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
-            this.pauseRecordingBtn.style.color = 'var(--color-error)';
-            this.pauseRecordingBtn.style.borderColor = 'var(--color-error)';
+            // Use standard pause button style
+            this.pauseRecordingBtn.classList.remove('play-btn');
+            this.pauseRecordingBtn.classList.add('pause-btn');
         }
     }
     
@@ -184,8 +190,9 @@ class VoiceInpaintingApp {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
-            this.playRecordingBtn.style.color = 'var(--color-error)';
-            this.playRecordingBtn.style.borderColor = 'var(--color-error)';
+            // Use standard pause button style
+            this.playRecordingBtn.classList.remove('play-btn');
+            this.playRecordingBtn.classList.add('pause-btn');
             
             // Add class to enable animation during playback
             document.getElementById('playbackWaveform').classList.add('recording-active');
@@ -258,8 +265,9 @@ class VoiceInpaintingApp {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
         `;
-        this.playRecordingBtn.style.color = 'var(--color-primary)';
-        this.playRecordingBtn.style.borderColor = 'var(--color-primary)';
+        // Use standard play button style
+        this.playRecordingBtn.classList.remove('pause-btn');
+        this.playRecordingBtn.classList.add('play-btn');
         
         // Remove animation class
         document.getElementById('playbackWaveform').classList.remove('recording-active');
@@ -275,10 +283,8 @@ class VoiceInpaintingApp {
         // Reset recording
         window.audioRecorder.cleanup();
         
-        // Reset UI
-        const ui = window.uiController;
-        ui.preRecordingState.classList.remove('hidden');
-        ui.pausedRecordingState.classList.add('hidden');
+        // Reset UI using the UI controller - go back to step 1
+        window.uiController.resetToStep1();
         
         // Reset recording state
         this.isRecordingPaused = false;
@@ -291,7 +297,7 @@ class VoiceInpaintingApp {
         const blob = window.audioRecorder.finalizeRecording();
         if (blob) {
             this.currentAudioBlob = blob;
-            window.uiController.goToEditStep(blob);
+            window.uiController.goToEditStepWithAudio(blob);
         }
     }
     
@@ -310,95 +316,7 @@ class VoiceInpaintingApp {
             document.getElementById('fileName').textContent = file.name;
             document.getElementById('fileName').classList.remove('hidden');
             
-            window.uiController.goToEditStep(file);
-        }
-    }
-    
-    /**
-     * Process audio with the edit prompt
-     */
-    async processAudio() {
-        if (!this.currentAudioBlob) {
-            window.uiController.showError('No audio file available for processing.');
-            return;
-        }
-        
-        const prompt = document.getElementById('editPrompt').value.trim();
-        if (!prompt) {
-            window.uiController.showError('Please enter an edit prompt.');
-            return;
-        }
-        
-        window.uiController.showLoading(true);
-        
-        try {
-            // Process the audio
-            const result = await AudioProcessor.processAudio(this.currentAudioBlob, prompt);
-            
-            // Store the processed blob for potential reuse
-            window.uiController.setProcessedAudio(result.processedBlob);
-            
-            // Update UI with results
-            window.uiController.goToResultStep(result.processedBlob, prompt, result.metadata);
-            
-            // Setup download button
-            this.downloadButton.onclick = () => {
-                const a = document.createElement('a');
-                a.href = document.getElementById('processedAudio').src;
-                a.download = 'processed_audio.wav';
-                a.click();
-            };
-            
-        } catch (err) {
-            window.uiController.showError(`Error processing audio: ${err.message}`);
-            console.error('Processing error:', err);
-        } finally {
-            window.uiController.showLoading(false);
-        }
-    }
-    
-    /**
-     * Go back to the edit step to change the prompt
-     */
-    changePrompt() {
-        const ui = window.uiController;
-        ui.resultSection.classList.add('hidden');
-        ui.audioPreview.classList.remove('hidden');
-        ui.editSection.classList.remove('hidden');
-        ui.backButtonContainer.classList.remove('hidden');
-        // Don't clear the prompt value to allow editing
-        ui.setEditingProcessedAudio(false); // We're using the original audio
-        ui.updateProgress(2);
-    }
-    
-    /**
-     * Use the processed result as the new input audio
-     */
-    useProcessedResult() {
-        const ui = window.uiController;
-        const processedBlob = ui.getProcessedAudio();
-        
-        // Use the processed audio as the new input
-        if (processedBlob) {
-            this.currentAudioBlob = processedBlob;
-            document.getElementById('audioPlayer').src = URL.createObjectURL(processedBlob);
-        }
-        
-        ui.resultSection.classList.add('hidden');
-        ui.audioPreview.classList.remove('hidden');
-        ui.editSection.classList.remove('hidden');
-        ui.backButtonContainer.classList.remove('hidden');
-        document.getElementById('editPrompt').value = ''; // Clear the previous prompt
-        ui.setEditingProcessedAudio(true); // We're now editing the processed audio
-        ui.updateProgress(2);
-    }
-    
-    /**
-     * Confirm before starting over
-     */
-    confirmStartOver() {
-        if (confirm('Are you sure you want to start over? Your current audio and edits will be lost.')) {
-            window.uiController.resetToStep1();
+            window.uiController.goToEditStepWithAudio(file);
         }
     }
 }
