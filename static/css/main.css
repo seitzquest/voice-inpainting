@@ -100,6 +100,11 @@ textarea:focus, input:focus {
     box-shadow: 0 0 0 2px rgba(91, 101, 41, 0.2);
 }
 
+.dark .bg-gray-50 {
+    background-color: #2A2A2A;
+    border-color: #444;
+}
+
 /* Radio buttons */
 .radio-group {
     display: flex;

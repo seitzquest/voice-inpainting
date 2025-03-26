@@ -235,6 +235,16 @@
 
             <!-- Result Section -->
             <div id="resultSection" class="hidden fade-in">
+                <!-- Back Button for Step 3 -->
+                <div id="changePromptButtonContainer" class="mb-4 fade-in">
+                    <button id="changePromptButton" class="back-button">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                        <span>Change prompt</span>
+                    </button>
+                </div>
+                
                 <div class="success-message mb-6 flex items-center">
                     <svg class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
@@ -252,16 +262,6 @@
                     <audio id="processedAudio" controls class="audio-player mb-4"></audio>
                     <p id="processingDetails" class="text-sm text-gray-600 italic"></p>
                     <p id="editPromptDisplay" class="text-sm text-gray-600 mt-2"></p>
-                </div>
-                
-                <!-- Back Button for Step 3 -->
-                <div id="changePromptButtonContainer" class="mb-4 fade-in">
-                    <button id="changePromptButton" class="back-button">
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                        </svg>
-                        <span>Change prompt</span>
-                    </button>
                 </div>
                 
                 <div class="flex justify-center space-x-4">

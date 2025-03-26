@@ -1,6 +1,5 @@
 /**
- * token-text-editor.js
- * Token-aware text editor that integrates with the waveform editor
+ * Complete update to token-text-editor.js to fix all subword token issues
  */
 
 class TokenTextEditor {
@@ -28,12 +27,17 @@ class TokenTextEditor {
         this.modifiedTokens = [];
         this.originalTokenText = {};   // Map token indexes to original text
         
+        // Initialize subword token handling
+        this.wordBoundaryTokens = new Set();  // Initialize the set of word boundary tokens
+        this.subwordTokenMap = {};  // Initialize the map of subword tokens to their parent tokens
+        
         // Waveform editor reference
         this.waveformEditor = null;
         
         // Change tracking
         this.lastText = '';
         this.isProcessingChange = false;
+        this.isInitializing = true;
         
         // Event callbacks
         this.onSelectionChange = null;
@@ -65,6 +69,9 @@ class TokenTextEditor {
         this.textArea.style.borderRadius = 'var(--radius-md)';
         this.textArea.style.resize = 'vertical';
         this.textArea.style.fontFamily = 'inherit';
+        // Add scrollbar for overflow
+        this.textArea.style.overflowY = 'auto';
+        this.textArea.style.maxHeight = '300px'; // Add max height to ensure scrollbar appears
         this.editorContainer.appendChild(this.textArea);
         
         // Create overlay for token highlighting
@@ -82,6 +89,8 @@ class TokenTextEditor {
         this.overlay.style.whiteSpace = 'pre-wrap';
         this.overlay.style.wordBreak = 'break-word';
         this.overlay.style.overflow = 'hidden';
+        this.overlay.style.color = 'transparent'; // Make overlay text transparent
+        this.overlay.innerHTML = ''; // Ensure it's empty initially
         this.editorContainer.appendChild(this.overlay);
         
         // Add CSS for token highlighting
@@ -118,23 +127,22 @@ class TokenTextEditor {
             .token-span {
                 position: relative;
                 border-radius: 2px;
+                cursor: pointer;
+                transition: background-color 0.2s ease;
             }
             
             .token-editor-overlay .token-selected {
                 background-color: rgba(91, 101, 41, 0.2);
             }
             
-            /* Note: We don't color modified text in red in the text box anymore */
-            .token-modified {
-                /* No visible styling in text editor */
-            }
-            
             .dark .token-editor-overlay .token-selected {
                 background-color: rgba(157, 184, 89, 0.3);
             }
             
-            .dark .token-modified {
-                /* No visible styling in text editor */
+            /* Make sure overlay scrolls with textarea */
+            .token-editor-overlay {
+                overflow-y: auto;
+                max-height: 300px;
             }
         `;
         document.head.appendChild(styleEl);
@@ -163,21 +171,46 @@ class TokenTextEditor {
      * @param {string} fullText - Full transcribed text
      */
     setTokenData(tokens, fullText) {
+        // Set initializing flag to prevent modification detection during setup
+        this.isInitializing = true;
+        
         this.tokens = tokens;
         this.originalText = fullText;
         
-        // Set textarea value
+        // Log token data to help with debugging
+        console.log('Token data received in text editor:', tokens.slice(0, 3), '... total:', tokens.length);
+        
+        // Clear any existing content and set textarea value
         this.textArea.value = fullText;
         this.lastText = fullText;
+        
+        // Make sure the overlay is empty first
+        this.overlay.innerHTML = '';
+        
+        // Store original text for each token and identify word boundaries
+        this.storeOriginalTokenText();
         
         // Create token to character position map
         this.createTokenMap();
         
-        // Store original text for each token
-        this.storeOriginalTokenText();
-        
         // Build initial overlay
         this.updateOverlay();
+        
+        // Reset any erroneously detected modifications on initialization
+        this.modifiedTokens = [];
+        
+        // Notify waveform editor of clean slate (no modifications)
+        if (this.waveformEditor) {
+            this.waveformEditor.markModifiedTokens([]);
+            this.waveformEditor.draw();
+        }
+        
+        // Clear initialization flag after a short delay
+        // This ensures all rendering is complete before we start detecting modifications
+        setTimeout(() => {
+            this.isInitializing = false;
+            console.log('Token editor initialization complete');
+        }, 100);
     }
     
     /**
@@ -189,18 +222,58 @@ class TokenTextEditor {
     }
     
     /**
-     * Store original text for each token
+     * Store original text for each token and identify which tokens to display
+     * Only the first occurrence of each token text will be displayed
      */
     storeOriginalTokenText() {
         this.originalTokenText = {};
+        this.displayTokens = new Set(); // Tokens to actually display (first occurrence only)
+        this.duplicateTokenMap = {}; // Maps token IDs to their first occurrence
+        
+        if (!this.tokens || this.tokens.length === 0) {
+            console.log('No tokens to process in storeOriginalTokenText');
+            return;
+        }
+        
+        // Sort tokens by index to ensure correct order
+        const sortedTokens = [...this.tokens].sort((a, b) => a.token_idx - b.token_idx);
         
         // Store original text for each token
-        for (const token of this.tokens) {
+        for (const token of sortedTokens) {
             const tokenIdx = token.token_idx;
-            const text = token.text;
+            const text = token.text || '';
             this.originalTokenText[tokenIdx] = text;
         }
+        
+        // Track which token texts we've seen
+        const seenTokenTexts = new Map(); // Map of token text to first token index
+        
+        // Process tokens in order
+        for (let i = 0; i < sortedTokens.length; i++) {
+            const token = sortedTokens[i];
+            const tokenIdx = token.token_idx;
+            const text = token.text || '';
+            
+            // Skip empty tokens
+            if (!text.trim()) continue;
+            
+            // Check if we've seen this token text before
+            if (!seenTokenTexts.has(text)) {
+                // First occurrence of this text - mark it for display
+                seenTokenTexts.set(text, tokenIdx);
+                this.displayTokens.add(tokenIdx);
+                this.duplicateTokenMap[tokenIdx] = tokenIdx; // Map to itself
+            } else {
+                // Duplicate text - map to the first occurrence
+                const firstOccurrenceIdx = seenTokenTexts.get(text);
+                this.duplicateTokenMap[tokenIdx] = firstOccurrenceIdx;
+            }
+        }
+        
+        console.log('Display tokens (first occurrences):', [...this.displayTokens]);
+        console.log('Tokens count:', this.tokens.length, 'Display tokens count:', this.displayTokens.size);
     }
+
     
     /**
      * Create a mapping between tokens and character positions
@@ -209,16 +282,13 @@ class TokenTextEditor {
         // First, check if the tokens are already sorted by text position
         if (!this.tokens || this.tokens.length === 0) return;
         
-        // Sort tokens by time to ensure proper ordering
-        this.tokens.sort((a, b) => a.start_time - b.start_time);
-        
         // Reset the token map
         this.tokenToSpanMap = {};
         
         // Rebuild the overlay with spans for each token
         this.updateOverlay();
     }
-    
+
     /**
      * Update the overlay with token spans
      */
@@ -229,58 +299,97 @@ class TokenTextEditor {
         }
         
         const currentText = this.textArea.value;
-        let html = '';
-        let currentPosition = 0;
-        let remainingText = currentText;
         
         // Create a mapping of token indices to spans
         this.tokenToSpanMap = {};
         
-        // Sort tokens by start time to ensure proper order
-        const sortedTokens = [...this.tokens].sort((a, b) => a.start_time - b.start_time);
+        // Ensure displayTokens exists
+        if (!this.displayTokens) {
+            this.displayTokens = new Set();
+            this.storeOriginalTokenText();
+        }
         
-        // Find token occurrences in the current text
-        for (const token of sortedTokens) {
+        // Get only the tokens we want to display (first occurrences)
+        const tokensToDisplay = this.tokens.filter(token => 
+            token && this.displayTokens.has(token.token_idx)
+        );
+        
+        // Sort by start time to ensure proper order
+        tokensToDisplay.sort((a, b) => a.start_time - b.start_time);
+        
+        console.log(`Rendering ${tokensToDisplay.length} unique tokens`);
+        
+        // Create a completely new overlay with marked spans
+        let html = '';
+        let position = 0;
+        
+        // Use a copy of the text that we'll process
+        let remainingText = currentText;
+        
+        // Process each token in order
+        for (const token of tokensToDisplay) {
             const tokenIdx = token.token_idx;
             const tokenText = token.text;
             
-            // If token text is empty, skip
+            // Skip empty tokens
             if (!tokenText || tokenText.trim() === '') continue;
             
-            // Try to find the token text in the remaining text
-            const tokenStart = remainingText.indexOf(tokenText);
+            // Find this token in the remaining text
+            const tokenPos = remainingText.indexOf(tokenText);
             
-            if (tokenStart >= 0) {
+            if (tokenPos >= 0) {
                 // Add any text before this token
-                if (tokenStart > 0) {
-                    const beforeText = remainingText.substring(0, tokenStart);
-                    html += this.escapeHtml(beforeText);
-                    currentPosition += tokenStart;
+                if (tokenPos > 0) {
+                    html += this.escapeHtml(remainingText.substring(0, tokenPos));
                 }
+                
+                // Get all duplicate tokens that map to this one
+                const duplicateIndices = [];
+                for (const [dupIdx, firstIdx] of Object.entries(this.duplicateTokenMap)) {
+                    if (parseInt(firstIdx) === tokenIdx) {
+                        duplicateIndices.push(parseInt(dupIdx));
+                    }
+                }
+                
+                // Check if this token or any of its duplicates are selected/modified
+                const isSelected = this.selectedTokens.includes(tokenIdx) || 
+                    duplicateIndices.some(idx => this.selectedTokens.includes(idx));
+                
+                const isModified = this.modifiedTokens.includes(tokenIdx) || 
+                    duplicateIndices.some(idx => this.modifiedTokens.includes(idx));
                 
                 // Add token with appropriate classes
                 const tokenClasses = ['token-span'];
-                if (this.selectedTokens.includes(tokenIdx)) {
+                if (isSelected) {
                     tokenClasses.push(this.options.selectedTokenClass);
                 }
-                if (this.modifiedTokens.includes(tokenIdx)) {
+                if (isModified) {
                     tokenClasses.push(this.options.modifiedTokenClass);
                 }
                 
                 // Create a unique ID for this token span
                 const spanId = `token-${tokenIdx}`;
                 
-                // Add the token span
-                html += `<span id="${spanId}" class="${tokenClasses.join(' ')}" data-token-idx="${tokenIdx}">${this.escapeHtml(tokenText)}</span>`;
+                // Store duplicate indices as data attribute
+                const duplicateIndicesAttr = duplicateIndices.join(',');
                 
-                // Store the span ID for this token
+                // Add token with data attributes
+                html += `<span id="${spanId}" class="${tokenClasses.join(' ')}" 
+                    data-token-idx="${tokenIdx}" 
+                    data-duplicate-indices="${duplicateIndicesAttr}"
+                    data-start-time="${token.start_time.toFixed(3)}" 
+                    data-end-time="${token.end_time.toFixed(3)}"
+                    data-original-text="${this.escapeHtml(tokenText)}"
+                    onclick="(function(e) { e.stopPropagation(); })(event)">${this.escapeHtml(tokenText)}</span>`;
+                
+                // Map this token to this span
                 this.tokenToSpanMap[tokenIdx] = spanId;
+                for (const dupIdx of duplicateIndices) {
+                    this.tokenToSpanMap[dupIdx] = spanId;
+                }
                 
-                // Update current position
-                currentPosition += tokenText.length;
-                
-                // Update remaining text
-                remainingText = remainingText.substring(tokenStart + tokenText.length);
+                // Update remaining text for next iteration
+                remainingText = remainingText.substring(tokenPos + tokenText.length);
             }
         }
         
@@ -291,8 +400,64 @@ class TokenTextEditor {
         
         // Update the overlay
         this.overlay.innerHTML = html;
+        
+        // Add click events to token spans
+        document.querySelectorAll('.token-span').forEach(span => {
+            span.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const tokenIdx = parseInt(span.getAttribute('data-token-idx'));
+                
+                // Get all duplicate indices for this token
+                const duplicateIndices = span.getAttribute('data-duplicate-indices')
+                    ? span.getAttribute('data-duplicate-indices').split(',').map(Number)
+                    : [tokenIdx];
+                    
+                console.log(`Token clicked: ${tokenIdx}, duplicates: ${duplicateIndices}`);
+                
+                // Select this token and all its duplicates
+                this.selectTokensByIndices(duplicateIndices);
+            });
+        });
     }
     
+    /**
+     * Select multiple tokens by their indices
+     * @param {Array} tokenIndices - Token indices to select
+     */
+    selectTokensByIndices(tokenIndices) {
+        // Reset the selection if there are no valid indices
+        if (!tokenIndices || tokenIndices.length === 0) {
+            this.selectedTokens = [];
+        } else {
+            // Toggle selection state based on the first token
+            const firstIdx = tokenIndices[0];
+            const isAlreadySelected = this.selectedTokens.includes(firstIdx);
+            
+            if (isAlreadySelected) {
+                // Remove all the token indices from the selection
+                this.selectedTokens = this.selectedTokens.filter(idx => 
+                    !tokenIndices.includes(idx)
+                );
+            } else {
+                // Add all the token indices to the selection
+                this.selectedTokens = [
+                    ...this.selectedTokens,
+                    ...tokenIndices.filter(idx => !this.selectedTokens.includes(idx))
+                ];
+            }
+        }
+        
+        console.log('Selected tokens updated:', this.selectedTokens);
+        
+        // Update overlay
+        this.updateOverlay();
+        
+        // Update waveform
+        if (this.waveformEditor) {
+            this.waveformEditor.selectTokens(this.selectedTokens);
+        }
+    }
+
     /**
      * Escape HTML special characters
      * @param {string} text - Text to escape
@@ -305,11 +470,11 @@ class TokenTextEditor {
     }
     
     /**
-     * Handle textarea input events
+     * Handle input events with clean separation of concerns
      */
     handleInput() {
-        // Skip if we're already processing a change
-        if (this.isProcessingChange) return;
+        // Skip if we're already processing a change or still initializing
+        if (this.isProcessingChange || this.isInitializing) return;
         this.isProcessingChange = true;
         
         const currentText = this.textArea.value;
@@ -322,7 +487,9 @@ class TokenTextEditor {
         
         // Update waveform using detected modified tokens
         if (this.waveformEditor) {
+            // Pass modified tokens to the waveform editor without affecting selection
             this.waveformEditor.markModifiedTokens(this.modifiedTokens);
+        
             // Force a redraw to update highlighting
             this.waveformEditor.draw();
         }
@@ -340,32 +507,78 @@ class TokenTextEditor {
     
     /**
      * Detect which tokens have been modified
+     * Enhanced to better handle adjacent token modifications
      * @param {string} currentText - Current text in the editor
      */
     detectModifiedTokens(currentText) {
-        // Get the modified tokens list without updating the waveform yet
+        // Skip if initializing
+        if (this.isInitializing) return;
+        
+        // Reset the modification list
         const modifiedTokens = [];
         
-        // Compare each token's original text with its current text in the span
-        for (const token of this.tokens) {
-            const tokenIdx = token.token_idx;
-            const originalText = token.text;
-            
-            if (!originalText) continue;
-            
-            // Find the token span
-            const spanId = this.tokenToSpanMap[tokenIdx];
-            if (!spanId) continue;
-            
-            const span = document.getElementById(spanId);
-            if (!span) continue;
-            
-            // Get current text
-            const currentTokenText = span.textContent;
+        // Get all rendered token spans from the DOM
+        const tokenSpans = document.querySelectorAll('.token-span');
+        
+        // Check each span's current text against the original token text
+        for (const span of tokenSpans) {
+            const tokenIdx = parseInt(span.getAttribute('data-token-idx'));
+            const originalText = span.getAttribute('data-original-text');
+            const currentSpanText = span.textContent;
             
             // If text has changed, mark as modified
-            if (currentTokenText !== originalText) {
-                modifiedTokens.push(tokenIdx);
+            if (originalText && currentSpanText !== originalText) {
+                console.log(`Token ${tokenIdx} modified: "${originalText}" → "${currentSpanText}"`);
+                
+                // Get all duplicate indices for this token
+                const duplicateIndices = span.getAttribute('data-duplicate-indices')
+                    ? span.getAttribute('data-duplicate-indices').split(',').map(Number)
+                    : [tokenIdx];
+                
+                // Add all duplicate tokens to modified list
+                for (const dupIdx of duplicateIndices) {
+                    if (!modifiedTokens.includes(dupIdx)) {
+                        modifiedTokens.push(dupIdx);
+                    }
+                }
+            }
+        }
+        
+        // Create a set of rendered token IDs for faster lookups
+        const renderedTokenIds = new Set(Array.from(tokenSpans).map(span => 
+            parseInt(span.getAttribute('data-token-idx'))
+        ));
+        
+        // Check which display tokens are missing
+        for (const tokenIdx of this.displayTokens) {
+            if (!renderedTokenIds.has(tokenIdx)) {
+                // The token was in the original text but isn't rendered now - must be deleted
+                const token = this.tokens.find(t => t.token_idx === tokenIdx);
+                if (token) {
+                    console.log(`Token ${tokenIdx} deleted: "${token.text}"`);
+                    
+                    // Get all duplicate tokens
+                    const duplicateIndices = [];
+                    for (const [dupIdx, firstIdx] of Object.entries(this.duplicateTokenMap)) {
+                        if (parseInt(firstIdx) === tokenIdx) {
+                            duplicateIndices.push(parseInt(dupIdx));
+                        }
+                    }
+                    
+                    // Mark this token and all duplicates as modified
+                    // But only if it's not adjacent to a previously modified token
+                    const isAdjacentToModified = this.checkIfAdjacentToModified(tokenIdx, modifiedTokens);
+                    
+                    // If it's not adjacent to a modified token, add it to the list
+                    if (!isAdjacentToModified) {
+                        modifiedTokens.push(tokenIdx);
+                        for (const dupIdx of duplicateIndices) {
+                            if (!modifiedTokens.includes(dupIdx)) {
+                                modifiedTokens.push(dupIdx);
+                            }
+                        }
+                    }
+                }
             }
         }
         
@@ -377,71 +590,51 @@ class TokenTextEditor {
             console.log('Modified tokens:', modifiedTokens);
         }
     }
-    
+
     /**
-     * Find text differences between two strings
-     * @param {string} oldText - Previous text
-     * @param {string} newText - Current text
-     * @returns {Array} - Array of positions where text differs
+     * Check if a token is adjacent to any modified tokens
+     * This helps prevent marking multiple consecutive tokens when only one was edited
+     * @param {number} tokenIdx - Token index to check
+     * @param {Array} modifiedTokens - List of already detected modified token indices
+     * @returns {boolean} - True if the token is adjacent to a modified token
      */
-    findTextDifferences(oldText, newText) {
-        const diffPositions = [];
-        const minLength = Math.min(oldText.length, newText.length);
+    checkIfAdjacentToModified(tokenIdx, modifiedTokens) {
+        if (!this.tokens || this.tokens.length === 0) return false;
         
-        // Find positions where characters differ
-        for (let i = 0; i < minLength; i++) {
-            if (oldText[i] !== newText[i]) {
-                diffPositions.push(i);
+        // Find the token object
+        const token = this.tokens.find(t => t.token_idx === tokenIdx);
+        if (!token) return false;
+        
+        // Check each modified token to see if it's adjacent to this one
+        for (const modifiedIdx of modifiedTokens) {
+            const modifiedToken = this.tokens.find(t => t.token_idx === modifiedIdx);
+            if (!modifiedToken) continue;
+            
+            // Get time boundaries
+            const thisStart = token.start_time;
+            const thisEnd = token.end_time;
+            const modStart = modifiedToken.start_time;
+            const modEnd = modifiedToken.end_time;
+            
+            // Check if tokens are adjacent - time boundaries are very close
+            const timeThreshold = 0.1; // 100ms threshold
+            
+            // Check for adjacent tokens
+            if (Math.abs(thisStart - modEnd) < timeThreshold || 
+                Math.abs(thisEnd - modStart) < timeThreshold) {
+                return true;
+            }
+            
+            // Check for overlapping tokens
+            if ((thisStart <= modEnd && thisEnd >= modStart) ||
+                (modStart <= thisEnd && modEnd >= thisStart)) {
+                return true;
             }
         }
         
-        // If lengths differ, add all positions after the common part
-        if (oldText.length !== newText.length) {
-            for (let i = minLength; i < Math.max(oldText.length, newText.length); i++) {
-                diffPositions.push(i);
-            }
-        }
-        
-        return diffPositions;
+        return false;
     }
-    
-    /**
-     * Find token that contains a specific character position
-     * @param {number} position - Character position
-     * @returns {number|null} - Token index or null if not found
-     */
-    findTokenAtPosition(position) {
-        if (!this.tokens || this.tokens.length === 0) return null;
-        
-        const currentText = this.textArea.value;
-        
-        // Find a token that matches the position
-        for (const token of this.tokens) {
-            const tokenText = token.text;
-            
-            // Skip empty tokens
-            if (!tokenText) continue;
-            
-            // Find all occurrences of this token in the text
-            let start = 0;
-            let tokenStart;
-            
-            while ((tokenStart = currentText.indexOf(tokenText, start)) !== -1) {
-                const tokenEnd = tokenStart + tokenText.length;
-                
-                // Check if position is within this token
-                if (position >= tokenStart && position < tokenEnd) {
-                    return token.token_idx;
-                }
-                
-                // Move to next occurrence
-                start = tokenStart + 1;
-            }
-        }
-        
-        return null;
-    }
-    
+
     /**
      * Handle selection change events
      */
@@ -476,12 +669,10 @@ class TokenTextEditor {
         // Update overlay
         this.updateOverlay();
         
-        // Update waveform
+        // Update waveform - use selectTokens with full selection array
         if (this.waveformEditor) {
+            // Only pass selection information to waveform, don't mix with modification
             this.waveformEditor.selectTokens(this.selectedTokens);
-            
-            // Force the waveform to redraw
-            this.waveformEditor.draw();
         }
         
         // Call selection callback if provided
@@ -493,6 +684,44 @@ class TokenTextEditor {
     }
     
     /**
+     * Find token that contains a specific character position with improved boundary handling
+     * @param {number} position - Character position
+     * @returns {number|null} - Token index or null if not found
+     */
+    findTokenAtPosition(position) {
+        if (!this.tokens || this.tokens.length === 0) return null;
+        
+        const currentText = this.textArea.value;
+        
+        // Find a token that matches the position
+        for (const token of this.tokens) {
+            const tokenText = token.text;
+            
+            // Skip empty tokens
+            if (!tokenText) continue;
+            
+            // Find all occurrences of this token in the text
+            let start = 0;
+            let tokenStart;
+            
+            while ((tokenStart = currentText.indexOf(tokenText, start)) !== -1) {
+                const tokenEnd = tokenStart + tokenText.length;
+                
+                // Check if position is within this token
+                // Add a small buffer (1 character) to avoid accidental selection at boundaries
+                if (position >= tokenStart && position <= tokenEnd) {
+                    return token.token_idx;
+                }
+                
+                // Move to next occurrence
+                start = tokenStart + 1;
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
      * Get the current text
      * @returns {string} - Current text
      */
@@ -501,44 +730,156 @@ class TokenTextEditor {
     }
     
     /**
-     * Get modifications as edit operations
+     * Get modifications as edit operations for the API
+     * Fixed to handle adjacent token edits properly
      * @returns {Array} - Array of edit operations
      */
     getEditOperations() {
         const editOperations = [];
-        const currentText = this.textArea.value;
         
-        // Compare the current text with original text to identify changes
-        for (const token of this.tokens) {
-            const tokenIdx = token.token_idx;
-            const originalText = token.text;
+        // Get all rendered token spans from the DOM
+        const tokenSpans = document.querySelectorAll('.token-span');
+        
+        // Group adjacent modified tokens together for more efficient editing
+        const modificationGroups = this.groupAdjacentModifiedTokens();
+        
+        // Process each group of modifications
+        for (const group of modificationGroups) {
+            const { tokenIndices, startIdx, endIdx } = group;
             
-            if (!originalText) continue;
+            // Find the actual edited text from the rendered spans
+            let originalText = '';
+            let editedText = '';
+            let foundAnySpans = false;
             
-            // Find this token in the current text
-            const currentSpanId = this.tokenToSpanMap[tokenIdx];
-            if (!currentSpanId) continue;
+            // Collect the text from all spans in this group
+            for (const tokenIdx of tokenIndices) {
+                // Find the original token
+                const token = this.tokens.find(t => t.token_idx === tokenIdx);
+                if (token) {
+                    originalText += token.text;
+                }
+                
+                // Find the span for this token
+                const span = document.querySelector(`[data-token-idx="${tokenIdx}"]`);
+                if (span) {
+                    editedText += span.textContent;
+                    foundAnySpans = true;
+                }
+            }
             
-            const span = document.getElementById(currentSpanId);
-            if (!span) continue;
+            // If no spans were found, this is a deletion
+            if (!foundAnySpans) {
+                editedText = '';
+            }
             
-            // Get the current text of this token
-            const newText = span.textContent;
-            
-            // Only add if the text has actually changed
-            if (newText && newText !== originalText) {
-                console.log(`Token ${tokenIdx} changed: "${originalText}" → "${newText}"`);
+            // Only create an edit operation if the text actually changed
+            if (originalText !== editedText) {
+                console.log(`Creating edit operation for tokens ${startIdx}-${endIdx}: "${originalText}" → "${editedText}"`);
                 
                 editOperations.push({
                     original_text: originalText,
-                    edited_text: newText,
-                    start_token_idx: tokenIdx,
-                    end_token_idx: tokenIdx + 1
+                    edited_text: editedText,
+                    start_token_idx: startIdx,
+                    end_token_idx: endIdx + 1 // Still need +1 because API expects exclusive end index
                 });
             }
         }
         
+        // Handle isolated deleted tokens that weren't included in any group
+        for (const tokenIdx of this.modifiedTokens) {
+            // Check if this token was already included in a group
+            const isInGroup = modificationGroups.some(group => 
+                group.tokenIndices.includes(tokenIdx)
+            );
+            
+            if (!isInGroup) {
+                // Find the token
+                const token = this.tokens.find(t => t.token_idx === tokenIdx);
+                if (token) {
+                    const originalText = token.text || '';
+                    
+                    // Check if there's a rendered span for this token
+                    const span = document.querySelector(`[data-token-idx="${tokenIdx}"]`);
+                    const editedText = span ? span.textContent : '';
+                    
+                    // Only create an edit operation if the text actually changed
+                    if (originalText !== editedText) {
+                        console.log(`Creating isolated edit operation for token ${tokenIdx}: "${originalText}" → "${editedText}"`);
+                        
+                        editOperations.push({
+                            original_text: originalText,
+                            edited_text: editedText,
+                            start_token_idx: tokenIdx,
+                            end_token_idx: tokenIdx + 1 // API expects exclusive end index
+                        });
+                    }
+                }
+            }
+        }
+        
         return editOperations;
+    }
+
+    /**
+     * Group adjacent modified tokens to create more efficient edit operations
+     * @returns {Array} - Array of modification groups
+     */
+    groupAdjacentModifiedTokens() {
+        const groups = [];
+        
+        if (this.modifiedTokens.length === 0) return groups;
+        
+        // Sort modified tokens by their position in the text (by start time)
+        const sortedTokens = [...this.modifiedTokens].sort((a, b) => {
+            const tokenA = this.tokens.find(t => t.token_idx === a);
+            const tokenB = this.tokens.find(t => t.token_idx === b);
+            
+            if (!tokenA || !tokenB) return 0;
+            
+            return tokenA.start_time - tokenB.start_time;
+        });
+        
+        let currentGroup = {
+            tokenIndices: [sortedTokens[0]],
+            startIdx: sortedTokens[0],
+            endIdx: sortedTokens[0]
+        };
+        
+        // Group adjacent tokens
+        for (let i = 1; i < sortedTokens.length; i++) {
+            const tokenIdx = sortedTokens[i];
+            const previousTokenIdx = sortedTokens[i - 1];
+            
+            // Find the actual token objects
+            const token = this.tokens.find(t => t.token_idx === tokenIdx);
+            const previousToken = this.tokens.find(t => t.token_idx === previousTokenIdx);
+            
+            if (!token || !previousToken) continue;
+            
+            // Check if tokens are adjacent (within a small time threshold)
+            const timeThreshold = 0.3; // 300ms threshold
+            const isAdjacent = Math.abs(token.start_time - previousToken.end_time) < timeThreshold;
+            
+            if (isAdjacent) {
+                // Add to current group
+                currentGroup.tokenIndices.push(tokenIdx);
+                currentGroup.endIdx = tokenIdx;
+            } else {
+                // Start a new group
+                groups.push(currentGroup);
+                currentGroup = {
+                    tokenIndices: [tokenIdx],
+                    startIdx: tokenIdx,
+                    endIdx: tokenIdx
+                };
+            }
+        }
+        
+        // Add the last group
+        groups.push(currentGroup);
+        
+        return groups;
     }
     
     /**
@@ -555,6 +896,8 @@ class TokenTextEditor {
         this.selectedTokens = [];
         this.modifiedTokens = [];
         this.tokenToSpanMap = {};
+        this.wordBoundaryTokens = new Set();
+        this.subwordTokenMap = {};
     }
 }
 

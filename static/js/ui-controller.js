@@ -53,10 +53,17 @@ class UIController {
         // Progress steps
         this.progressSteps = document.querySelectorAll('.progress-step');
         
+        // Tokenization state tracking (existing state for manual editing)
         this.tokenizationState = {
             inProgress: false,
             cancelled: false
         };        
+
+        // Processing state tracking (new state for prompt-based editing)
+        this.processingState = {
+            inProgress: false,
+            cancelled: false
+        };
 
         // Application state
         this.state = {
@@ -353,6 +360,13 @@ class UIController {
         if (previousMode === 'manual' && mode === 'prompt' && this.tokenizationState.inProgress) {
             console.log('Cancelling tokenization due to edit mode change from manual to prompt');
             this.tokenizationState.cancelled = true;
+            this.showLoading(false);  // Hide loading indicator immediately
+        }
+
+        // Check if we should cancel processing
+        if (previousMode === 'prompt' && mode === 'manual' && this.processingState.inProgress) {
+            console.log('Cancelling processing due to edit mode change from prompt to manual');
+            this.processingState.cancelled = true;
             this.showLoading(false);  // Hide loading indicator immediately
         }
         
@@ -695,13 +709,34 @@ class UIController {
             return;
         }
         
+        // Set processing state
+        this.processingState.inProgress = true;
+        this.processingState.cancelled = false;
+        
         this.showLoading(true);
         
         try {
-            // Process the audio
-            const result = await AudioProcessor.processAudio(this.state.audioBlob, prompt);
+            // Check if processing was cancelled before starting
+            if (this.processingState.cancelled) {
+                console.log('Processing cancelled before starting');
+                return;
+            }
             
-            // Update UI with results
+            // Get the current audio blob
+            const audioUrl = this.audioElements.audioPlayer.src;
+            const response = await fetch(audioUrl);
+            const audioBlob = await response.blob();
+            
+            // Process the audio
+            const result = await AudioProcessor.processAudio(audioBlob, prompt);
+            
+            // Check if processing was cancelled after API call
+            if (this.processingState.cancelled) {
+                console.log('Processing cancelled after API call');
+                return;
+            }
+            
+            // Update UI with results (only if not cancelled)
             this.goToResultStep(result.processedBlob, prompt, result.metadata);
             
             // Setup download button
@@ -713,10 +748,19 @@ class UIController {
             };
             
         } catch (err) {
-            this.showError(`Error processing audio: ${err.message}`);
-            console.error('Processing error:', err);
+            // Only show error if processing wasn't cancelled
+            if (!this.processingState.cancelled) {
+                this.showError(`Error processing audio: ${err.message}`);
+                console.error('Processing error:', err);
+            }
         } finally {
-            this.showLoading(false);
+            // Reset processing state
+            this.processingState.inProgress = false;
+            
+            // Hide loading indicator only if not cancelled
+            if (!this.processingState.cancelled) {
+                this.showLoading(false);
+            }
         }
     }
     
@@ -728,10 +772,16 @@ class UIController {
         if (this.tokenizationState.inProgress) {
             console.log('Cancelling ongoing tokenization');
             this.tokenizationState.cancelled = true;
-            
-            // Hide loading indicator immediately
-            this.showLoading(false);
         }
+        
+        // Cancel any ongoing processing
+        if (this.processingState.inProgress) {
+            console.log('Cancelling ongoing processing');
+            this.processingState.cancelled = true;
+        }
+        
+        // Hide loading indicator immediately
+        this.showLoading(false);
         
         // Clean up audio resources
         window.audioRecorder.cleanup();
@@ -783,6 +833,7 @@ class UIController {
     showLoading(show) {
         if (show) {
             this.sections.loadingIndicator.classList.remove('hidden');
+            this.sections.loadingIndicator.style.cursor = 'not-allowed'; // Set cursor
             document.getElementById('processButton').disabled = true;
             document.getElementById('processButton').classList.add('opacity-50');
         } else {

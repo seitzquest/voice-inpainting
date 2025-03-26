@@ -10,7 +10,7 @@
 
 /* Waveform editor styles */
 .waveform-editor-container {
-    background-color: var(--color-secondary-light);
+    background-color: #E2E8CC;
     border-radius: var(--radius-md);
     position: relative;
     overflow: hidden;
@@ -30,14 +30,8 @@
 }
 
 .token-editor-input {
-    width: 100%;
-    resize: vertical;
-    min-height: 100px;
-    padding: 0.75rem;
-    font-family: inherit;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--color-gray);
-    transition: var(--transition-default);
+    color: transparent;
+    caret-color: rgb(240, 240, 240); /* Keep cursor visible */
 }
 
 .dark .token-editor-input {
@@ -86,24 +80,6 @@
 .token-span {
     transition: background-color 0.2s ease;
     border-radius: 2px;
-}
-
-.token-selected {
-    background-color: rgba(91, 101, 41, 0.2);
-}
-
-.token-modified {
-    background-color: rgba(185, 28, 28, 0.2);
-    text-decoration: underline wavy rgba(185, 28, 28, 0.5);
-}
-
-.dark .token-selected {
-    background-color: rgba(157, 184, 89, 0.3);
-}
-
-.dark .token-modified {
-    background-color: rgba(220, 38, 38, 0.3);
-    text-decoration: underline wavy rgba(220, 38, 38, 0.5);
 }
 
 /* Edit mode selection */

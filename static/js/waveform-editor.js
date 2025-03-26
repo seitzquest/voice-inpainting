@@ -1,6 +1,6 @@
 /**
  * waveform-editor.js
- * Advanced waveform visualization with token highlighting
+ * Advanced waveform visualization with token highlighting and range selection
  */
 
 class WaveformEditor {
@@ -10,17 +10,21 @@ class WaveformEditor {
             height: 100,
             barWidth: 3,
             barGap: 1,
-            selectedColor: 'var(--color-primary-light)',
-            modifiedColor: 'var(--color-error)',
-            defaultColor: '#CCCCCC',
-            darkModeDefaultColor: '#666666',
+            selectedColor: 'var(--color-primary-light)', // Green color from logo (text-green-bar)
+            selectedRangeColor: 'rgba(157, 184, 89, 0.15)', // Less strong green in light mode
+            selectedRangeDarkColor: 'rgba(157, 184, 89, 0.25)', // Dark mode green for backgrounds
+            modifiedColor: '#FF5252', // Red color from logo (text-red-bar)
+            defaultColor: '#333333', // Gray color (text-gray-bars in light mode)
+            darkModeDefaultColor: '#B0B0B0', // Gray color in dark mode
         }, options);
         
         // Canvas elements
         this.canvasContainer = null;
         this.waveformCanvas = null;
+        this.selectionCanvas = null;  // New canvas for range selection highlighting
         this.playheadCanvas = null;
         this.ctx = null;
+        this.selectionCtx = null;     // New context for selection canvas
         this.playheadCtx = null;
         
         // Audio data
@@ -33,12 +37,15 @@ class WaveformEditor {
         this.tokens = [];       // Array of token metadata
         this.selectedTokens = [];
         this.modifiedTokens = [];
-        
+
         // Playback state
         this.isPlaying = false;
         this.playbackStartTime = 0;
         this.animationFrame = null;
         
+        // Token highlighting
+        this.highlightedRegions = []; // Store time ranges for highlighted regions
+
         // Interaction
         this.isDragging = false;
     }
@@ -56,7 +63,21 @@ class WaveformEditor {
         this.canvasContainer.style.marginBottom = '1rem';
         this.container.appendChild(this.canvasContainer);
         
-        // Create waveform canvas
+        // Get actual computed CSS values for colors
+        this.readThemeColors();
+        
+        // Create selection canvas (bottom layer)
+        this.selectionCanvas = document.createElement('canvas');
+        this.selectionCanvas.className = 'selection-canvas';
+        this.selectionCanvas.style.position = 'absolute';
+        this.selectionCanvas.style.top = '0';
+        this.selectionCanvas.style.left = '0';
+        this.selectionCanvas.style.width = '100%';
+        this.selectionCanvas.style.height = '100%';
+        this.selectionCanvas.style.zIndex = '1'; // Lowest layer
+        this.canvasContainer.appendChild(this.selectionCanvas);
+        
+        // Create waveform canvas (middle layer)
         this.waveformCanvas = document.createElement('canvas');
         this.waveformCanvas.className = 'waveform-canvas';
         this.waveformCanvas.style.position = 'absolute';
@@ -64,9 +85,10 @@ class WaveformEditor {
         this.waveformCanvas.style.left = '0';
         this.waveformCanvas.style.width = '100%';
         this.waveformCanvas.style.height = '100%';
+        this.waveformCanvas.style.zIndex = '2'; // Middle layer
         this.canvasContainer.appendChild(this.waveformCanvas);
         
-        // Create playhead canvas (overlay)
+        // Create playhead canvas (top layer)
         this.playheadCanvas = document.createElement('canvas');
         this.playheadCanvas.className = 'playhead-canvas';
         this.playheadCanvas.style.position = 'absolute';
@@ -75,9 +97,11 @@ class WaveformEditor {
         this.playheadCanvas.style.width = '100%';
         this.playheadCanvas.style.height = '100%';
         this.playheadCanvas.style.pointerEvents = 'none';
+        this.playheadCanvas.style.zIndex = '3'; // Top layer
         this.canvasContainer.appendChild(this.playheadCanvas);
         
         // Get contexts
+        this.selectionCtx = this.selectionCanvas.getContext('2d');
         this.ctx = this.waveformCanvas.getContext('2d');
         this.playheadCtx = this.playheadCanvas.getContext('2d');
         
@@ -86,6 +110,18 @@ class WaveformEditor {
         
         // Add event listeners
         window.addEventListener('resize', () => this.resizeCanvas());
+        
+        // Listen for theme changes to update colors
+        const observer = new MutationObserver(() => {
+            this.readThemeColors();
+            this.draw();
+            this.drawSelectionRanges(); // Redraw selection ranges with updated colors
+        });
+        
+        observer.observe(document.documentElement, { 
+            attributes: true,
+            attributeFilter: ['class'] 
+        });
         
         // Add click/touch event listeners for playback control
         this.waveformCanvas.addEventListener('click', (e) => this.handleCanvasClick(e));
@@ -96,6 +132,68 @@ class WaveformEditor {
         
         // Create play/pause button
         this.createPlayButton();
+        
+        // Log initialization with color settings
+        console.log('WaveformEditor initialized with colors:', {
+            selected: this.options.selectedColor,
+            selectedRange: this.options.selectedRangeColor,
+            modified: this.options.modifiedColor,
+            default: this.options.defaultColor,
+            darkModeDefault: this.options.darkModeDefaultColor
+        });
+    }
+
+    /**
+     * Read theme colors from CSS variables
+     */
+    readThemeColors() {
+        // Create a temporary element to get computed styles
+        const tempEl = document.createElement('div');
+        tempEl.style.display = 'none';
+        document.body.appendChild(tempEl);
+        
+        // Update default colors based on theme
+        const isDarkMode = document.documentElement.classList.contains('dark');
+        if (isDarkMode) {
+            // Use dark mode colors
+            tempEl.className = 'text-gray-bars dark';
+            const grayColor = window.getComputedStyle(tempEl).color || '#B0B0B0';
+            this.options.darkModeDefaultColor = grayColor;
+            
+            tempEl.className = 'text-green-bar dark';
+            const greenColor = window.getComputedStyle(tempEl).color || '#9DB859';
+            this.options.selectedColor = greenColor;
+            
+            // Use dark mode selection range color
+            this.options.currentRangeColor = this.options.selectedRangeDarkColor;
+        } else {
+            // Use light mode colors
+            tempEl.className = 'text-gray-bars';
+            const grayColor = window.getComputedStyle(tempEl).color || '#333333';
+            this.options.defaultColor = grayColor;
+            
+            tempEl.className = 'text-green-bar';
+            const greenColor = window.getComputedStyle(tempEl).color || '#5DA831';
+            this.options.selectedColor = greenColor;
+            
+            // Use light mode selection range color (white)
+            this.options.currentRangeColor = this.options.selectedRangeColor;
+        }
+        
+        // Red color from logo
+        tempEl.className = 'text-red-bar';
+        const redColor = window.getComputedStyle(tempEl).color || '#FF5252';
+        this.options.modifiedColor = redColor;
+        
+        // Clean up
+        document.body.removeChild(tempEl);
+        
+        console.log('Theme colors updated:', {
+            selected: this.options.selectedColor,
+            selectedRange: this.options.currentRangeColor,
+            modified: this.options.modifiedColor,
+            default: isDarkMode ? this.options.darkModeDefaultColor : this.options.defaultColor
+        });
     }
     
     /**
@@ -105,6 +203,7 @@ class WaveformEditor {
         const playButton = document.createElement('button');
         playButton.id = 'waveformPlayButton';
         playButton.className = 'control-btn play-btn absolute bottom-2 left-2';
+        playButton.style.zIndex = '4'; // Above all canvas layers
         playButton.innerHTML = `
             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -126,23 +225,33 @@ class WaveformEditor {
         // Set canvas dimensions (with pixel ratio adjustment for high-DPI displays)
         const pixelRatio = window.devicePixelRatio || 1;
         
+        // Update selection canvas
+        this.selectionCanvas.width = width * pixelRatio;
+        this.selectionCanvas.height = this.options.height * pixelRatio;
+        this.selectionCanvas.style.width = `${width}px`;
+        this.selectionCanvas.style.height = `${this.options.height}px`;
+        
+        // Update waveform canvas
         this.waveformCanvas.width = width * pixelRatio;
         this.waveformCanvas.height = this.options.height * pixelRatio;
         this.waveformCanvas.style.width = `${width}px`;
         this.waveformCanvas.style.height = `${this.options.height}px`;
         
+        // Update playhead canvas
         this.playheadCanvas.width = width * pixelRatio;
         this.playheadCanvas.height = this.options.height * pixelRatio;
         this.playheadCanvas.style.width = `${width}px`;
         this.playheadCanvas.style.height = `${this.options.height}px`;
         
-        // Scale the context to account for pixel ratio
+        // Scale the contexts to account for pixel ratio
+        this.selectionCtx.scale(pixelRatio, pixelRatio);
         this.ctx.scale(pixelRatio, pixelRatio);
         this.playheadCtx.scale(pixelRatio, pixelRatio);
         
         // Redraw if we have data
         if (this.audioData) {
             this.draw();
+            this.drawSelectionRanges();
         }
     }
     
@@ -281,24 +390,111 @@ class WaveformEditor {
      */
     setTokenData(tokens) {
         this.tokens = tokens;
+        // Log token data to help with debugging
+        console.log('Token data set:', tokens.slice(0, 3), '... total:', tokens.length);
         this.draw();
     }
     
     /**
-     * Select tokens to highlight
+     * Select tokens to highlight - keeping selection logic independent from modification
      * @param {Array} tokenIndices - Array of token indices to highlight
      */
     selectTokens(tokenIndices) {
+        // Simply store the tokens to be selected, without filtering
         this.selectedTokens = tokenIndices || [];
+        
+        // Debug output
+        if (this.selectedTokens.length > 0) {
+            console.log('Tokens selected in waveform:', this.selectedTokens);
+        }
+        
+        // Calculate highlighted regions based on selected tokens
+        this.calculateHighlightedRegions();
+        
+        // Draw selection ranges
+        this.drawSelectionRanges();
+        
+        // Redraw waveform with updated highlighting
         this.draw();
+    }
+        
+    /**
+     * Calculate time regions to highlight based on selected tokens
+     * Enhanced with proper alignment and boundary checks
+     */
+    calculateHighlightedRegions() {
+        this.highlightedRegions = [];
+        
+        if (!this.tokens || this.tokens.length === 0 || this.selectedTokens.length === 0) {
+            return;
+        }
+        
+        // Find all tokens that match the selected indices
+        for (const token of this.tokens) {
+            if (this.selectedTokens.includes(token.token_idx)) {
+                // Ensure we have start and end times
+                if (token.start_time !== undefined && token.end_time !== undefined) {
+                    this.highlightedRegions.push({
+                        start: token.start_time,
+                        end: token.end_time,
+                        tokenIdx: token.token_idx
+                    });
+                }
+            }
+        }
+        
+        // Debug output
+        if (this.highlightedRegions.length > 0) {
+            console.log('Highlighted regions:', this.highlightedRegions);
+            // Log the start time of the first token as well for debugging
+            const firstToken = this.tokens.reduce((earliest, token) => 
+                token.start_time < earliest.start_time ? token : earliest, this.tokens[0]);
+            console.log('First token in audio starts at:', firstToken.start_time, 'seconds');
+        }
     }
     
     /**
-     * Mark tokens as modified (to be highlighted in red)
+     * Draw selection ranges as background areas
+     */
+    drawSelectionRanges() {
+        if (!this.audioData || !this.selectionCtx) return;
+        
+        // Clear selection canvas
+        const width = this.selectionCanvas.clientWidth;
+        const height = this.options.height;
+        this.selectionCtx.clearRect(0, 0, width, height);
+        
+        // If no regions to highlight, we're done
+        if (!this.highlightedRegions || this.highlightedRegions.length === 0) {
+            return;
+        }
+        
+        // Draw highlighted regions with subtle background color
+        for (const region of this.highlightedRegions) {
+            const startX = this.timeToPosition(region.start);
+            const endX = this.timeToPosition(region.end);
+            const regionWidth = endX - startX;
+            
+            // Draw background for the entire height
+            this.selectionCtx.fillStyle = this.options.currentRangeColor;
+            this.selectionCtx.fillRect(startX, 0, regionWidth, height);
+        }
+    }
+    
+    /**
+     * Mark tokens as modified - keeping modification logic independent from selection
      * @param {Array} tokenIndices - Array of token indices to mark as modified
      */
     markModifiedTokens(tokenIndices) {
+        // Simply store the tokens that are modified, without changing selection
         this.modifiedTokens = tokenIndices || [];
+        
+        // Debug output
+        if (this.modifiedTokens.length > 0) {
+            console.log('Tokens marked as modified in waveform:', this.modifiedTokens);
+        }
+        
+        // Redraw with updated highlighting
         this.draw();
     }
     
@@ -343,7 +539,7 @@ class WaveformEditor {
     }
     
     /**
-     * Convert time to x-position on canvas
+     * Convert time to x-position on canvas with improved precision
      * @param {number} time - Time in seconds
      * @returns {number} - X position on canvas
      */
@@ -365,7 +561,7 @@ class WaveformEditor {
     }
     
     /**
-     * Draw the waveform with token highlighting
+     * Draw the waveform with proper color values
      */
     draw() {
         if (!this.audioData) return;
@@ -379,60 +575,64 @@ class WaveformEditor {
         const isDarkMode = document.documentElement.classList.contains('dark');
         const defaultColor = isDarkMode ? this.options.darkModeDefaultColor : this.options.defaultColor;
         
-        // Cache token time info for faster lookups
-        const tokenRanges = this.tokens.map(token => ({
-            tokenIdx: token.token_idx,
-            startTime: token.start_time,
-            endTime: token.end_time
-        }));
+        // Ensure we have actual color values, not CSS variable references
+        const selectedColor = this.options.selectedColor;
+        const modifiedColor = this.options.modifiedColor;
         
-        console.log("Selected tokens:", this.selectedTokens);
-        console.log("Modified tokens:", this.modifiedTokens);
+        // Build token time maps for faster lookups
+        const tokenTimeMap = new Map();
         
-        // Draw each bar
+        // Create a mapping of time positions to token indices for efficient lookup
+        if (this.tokens && this.tokens.length > 0) {
+            for (const token of this.tokens) {
+                if (token.start_time !== undefined && token.end_time !== undefined) {
+                    // Store token index by its time boundaries
+                    tokenTimeMap.set(token.token_idx, {
+                        start: token.start_time,
+                        end: token.end_time
+                    });
+                }
+            }
+        }
+        
+        // Draw all bars with appropriate colors
         for (let i = 0; i < this.audioData.totalBars; i++) {
             const peak = this.audioData.peaks[i];
             const x = i * (this.options.barWidth + this.options.barGap);
             
-            // Calculate height of the bar (use both min and max for more interesting waveform)
+            // Calculate height for the top and bottom parts of the waveform
             const minHeight = peak.min * height;
             const maxHeight = peak.max * height;
-            
-            // Calculate vertical center
             const centerY = height / 2;
             
-            // Determine the time range represented by this bar
+            // Default to the standard waveform color
+            let barColor = defaultColor;
+            
+            // Determine the time range for this bar
             const startTime = this.positionToTime(x);
             const endTime = this.positionToTime(x + this.options.barWidth);
             
-            // Determine bar color based on token state
-            let barColor = defaultColor;
+            // First, check if this bar is in a modified region
+            for (const tokenIdx of this.modifiedTokens) {
+                const timeInfo = tokenTimeMap.get(tokenIdx);
+                if (timeInfo && endTime >= timeInfo.start && startTime <= timeInfo.end) {
+                    barColor = modifiedColor;
+                    break;
+                }
+            }
             
-            // Check if this bar corresponds to a token
-            let hasModifiedToken = false;
-            let hasSelectedToken = false;
-            
-            // Check each token to see if it overlaps with this time segment
-            for (const tokenRange of tokenRanges) {
-                // If there's an overlap between token time and bar time
-                if (tokenRange.endTime >= startTime && tokenRange.startTime <= endTime) {
-                    if (this.modifiedTokens.includes(tokenRange.tokenIdx)) {
-                        hasModifiedToken = true;
-                    }
-                    if (this.selectedTokens.includes(tokenRange.tokenIdx)) {
-                        hasSelectedToken = true;
+            // If not modified, check if it's selected (for bar coloring, not background highlight)
+            if (barColor === defaultColor) {
+                for (const tokenIdx of this.selectedTokens) {
+                    const timeInfo = tokenTimeMap.get(tokenIdx);
+                    if (timeInfo && endTime >= timeInfo.start && startTime <= timeInfo.end) {
+                        barColor = selectedColor;
+                        break;
                     }
                 }
             }
             
-            // Set bar color based on state - prioritize modification over selection
-            if (hasModifiedToken) {
-                barColor = this.options.modifiedColor;
-            } else if (hasSelectedToken) {
-                barColor = this.options.selectedColor;
-            }
-            
-            // Draw the bar (as a rectangle from center)
+            // Draw the bar with the determined color
             this.ctx.fillStyle = barColor;
             
             // Draw from center to max (top part)
@@ -452,7 +652,7 @@ class WaveformEditor {
             );
         }
     }
-    
+
     /**
      * Draw playhead at current audio position
      */
@@ -472,7 +672,7 @@ class WaveformEditor {
         this.playheadCtx.beginPath();
         this.playheadCtx.moveTo(x, 0);
         this.playheadCtx.lineTo(x, height);
-        this.playheadCtx.strokeStyle = 'red';
+        this.playheadCtx.strokeStyle = this.options.modifiedColor; // Use the red color from logo
         this.playheadCtx.lineWidth = 2;
         this.playheadCtx.stroke();
     }
@@ -617,6 +817,7 @@ class WaveformEditor {
         this.tokens = [];
         this.selectedTokens = [];
         this.modifiedTokens = [];
+        this.highlightedRegions = [];
     }
 }
 
