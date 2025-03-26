@@ -1,11 +1,11 @@
 /**
- * ui-controller.js
+ * Simplified ui-controller.js
  * Manages UI states and transitions between application steps
  */
 
 class UIController {
     constructor() {
-        // Store references to all UI sections
+        // Store references to UI sections
         this.sections = {
             // Step 1: Record/Upload
             recordSection: document.getElementById('recordSection'),
@@ -14,7 +14,7 @@ class UIController {
         
             // Step 2: Edit
             audioPreview: document.getElementById('audioPreview'),
-            editModeSelection: document.getElementById('editModeSelection'), // Now using the pre-defined div
+            editModeSelection: document.getElementById('editModeSelection'),
             manualEditor: document.getElementById('manualEditorContainer'),
             promptEditor: document.getElementById('editSection'),
             
@@ -53,13 +53,12 @@ class UIController {
         // Progress steps
         this.progressSteps = document.querySelectorAll('.progress-step');
         
-        // Tokenization state tracking (existing state for manual editing)
+        // Processing states
         this.tokenizationState = {
             inProgress: false,
             cancelled: false
-        };        
-
-        // Processing state tracking (new state for prompt-based editing)
+        };
+        
         this.processingState = {
             inProgress: false,
             cancelled: false
@@ -69,13 +68,10 @@ class UIController {
         this.state = {
             currentStep: 1,
             editMode: 'manual', // 'manual' or 'prompt'
-            isEditingProcessedAudio: false,
-            processedAudioBlob: null,
             audioBlob: null,
+            processedAudioBlob: null,
             tokenData: null,
             transcribedText: null,
-            
-            // Editors
             waveformEditor: null,
             tokenTextEditor: null
         };
@@ -88,17 +84,15 @@ class UIController {
         // Set initial state
         this.goToStep(1);
         
-        // Bind radio button change events for input method selection
+        // Bind input method selection
         document.querySelectorAll('input[name="audioChoice"]').forEach(radio => {
             radio.addEventListener('change', () => this.handleInputMethodChange(radio.value));
         });
         
-        // Bind radio button change events for edit mode selection
+        // Bind edit mode selection
         document.querySelectorAll('input[name="editMode"]').forEach(radio => {
             radio.addEventListener('change', () => {
-                if (radio.checked) {
-                    this.setEditMode(radio.value);
-                }
+                if (radio.checked) this.setEditMode(radio.value);
             });
         });
         
@@ -117,7 +111,7 @@ class UIController {
     goToStep(step) {
         this.state.currentStep = step;
         
-        // Hide all sections first
+        // Hide all sections
         this.hideAllSections();
         
         // Update progress indicator
@@ -125,15 +119,9 @@ class UIController {
         
         // Show appropriate sections based on step
         switch (step) {
-            case 1:
-                this.setupStep1();
-                break;
-            case 2:
-                this.setupStep2();
-                break;
-            case 3:
-                this.setupStep3();
-                break;
+            case 1: this.setupStep1(); break;
+            case 2: this.setupStep2(); break;
+            case 3: this.setupStep3(); break;
         }
     }
     
@@ -141,20 +129,20 @@ class UIController {
      * Set up Step 1: Record/Upload
      */
     setupStep1() {
-        // Clean up any resources from previous steps
+        // Clean up resources
         this.cleanupEditors();
         
-        // Clear state data for editing
+        // Clear state data
         this.state.tokenData = null;
         this.state.transcribedText = null;
         
-        // Show input radio group
+        // Show input selection
         if (this.sections.inputMethodSelection) {
             this.sections.inputMethodSelection.classList.remove('hidden');
-            this.sections.inputMethodSelection.style.display = ''; // Clear any inline display style
+            this.sections.inputMethodSelection.style.display = '';
         }
         
-        // Show the appropriate section based on selected input method
+        // Show appropriate section
         if (document.getElementById('record').checked) {
             this.sections.recordSection.classList.remove('hidden');
         } else {
@@ -170,8 +158,6 @@ class UIController {
         this.textElements.editPrompt.value = '';
         this.textElements.fileName.textContent = '';
         this.textElements.fileName.classList.add('hidden');
-        
-        // Reset file input
         document.getElementById('fileUpload').value = '';
     }
     
@@ -182,34 +168,25 @@ class UIController {
         // Show back button
         this.sections.backButtonContainer.classList.remove('hidden');
         
-        // Make sure input method selection is hidden to fix the bug
+        // Hide input method selection
         if (this.sections.inputMethodSelection) {
             this.sections.inputMethodSelection.classList.add('hidden');
-            this.sections.inputMethodSelection.style.display = 'none'; // Force hide with inline style
+            this.sections.inputMethodSelection.style.display = 'none';
         }
         
         // Show edit mode selection
         if (this.sections.editModeSelection) {
             this.sections.editModeSelection.classList.remove('hidden');
             
-            // Set the correct radio button based on current state
-            const manualRadio = document.getElementById('manual-edit');
-            const promptRadio = document.getElementById('prompt-edit');
-            
-            if (this.state.editMode === 'manual') {
-                manualRadio.checked = true;
-                promptRadio.checked = false;
-            } else {
-                manualRadio.checked = false;
-                promptRadio.checked = true;
-            }
+            // Set radio buttons
+            document.getElementById('manual-edit').checked = (this.state.editMode === 'manual');
+            document.getElementById('prompt-edit').checked = (this.state.editMode === 'prompt');
         }
 
-        // Show audio preview if we have audio
+        // Show audio preview if available
         if (this.state.audioBlob) {
             this.sections.audioPreview.classList.remove('hidden');
             
-            // Set audio player source if needed
             if (!this.audioElements.audioPlayer.src && this.state.audioBlob) {
                 this.audioElements.audioPlayer.src = URL.createObjectURL(this.state.audioBlob);
             }
@@ -238,10 +215,10 @@ class UIController {
         this.sections.resultSection.classList.add('hidden');
         this.sections.backButtonContainer.classList.add('hidden');
         
-        // Hide input selection radio group - use both class and inline style
+        // Hide input selection
         if (this.sections.inputMethodSelection) {
             this.sections.inputMethodSelection.classList.add('hidden');
-            this.sections.inputMethodSelection.style.display = 'none'; // Force hide with inline style
+            this.sections.inputMethodSelection.style.display = 'none';
         }
         
         // Hide error message
@@ -259,10 +236,8 @@ class UIController {
         this.sections.promptEditor.classList.add('hidden');
     }
     
-    // Remove the createEditModeSelection method since we're now using the pre-defined element in HTML
-    
     /**
-     * Create or get the manual editor container
+     * Get the manual editor container
      * @returns {HTMLElement} The manual editor container
      */
     getManualEditorContainer() {
@@ -271,6 +246,14 @@ class UIController {
             container.id = 'manualEditorContainer';
             container.className = 'manual-editor-container mb-6 slide-in';
             this.sections.manualEditor = container;
+            
+            // Add to document if not already present
+            if (!document.getElementById('manualEditorContainer')) {
+                const audioPreviewElement = document.getElementById('audioPreview');
+                if (audioPreviewElement && audioPreviewElement.parentNode) {
+                    audioPreviewElement.parentNode.insertBefore(container, audioPreviewElement.nextSibling);
+                }
+            }
         }
         
         return this.sections.manualEditor;
@@ -298,33 +281,28 @@ class UIController {
      * @param {number} step - Current step (1, 2, or 3)
      */
     updateProgress(step) {
-        // Clear all line-active classes first
-        this.progressSteps.forEach(step => {
-            step.classList.remove('line-active');
+        // Reset all steps
+        this.progressSteps.forEach(progressStep => {
+            progressStep.classList.remove('active', 'complete', 'line-active');
         });
         
-        // Update each step status
+        // Update each step
         this.progressSteps.forEach((progressStep, index) => {
             const stepNumber = index + 1;
             
-            // Reset classes first
-            progressStep.classList.remove('active', 'complete', 'line-active');
-            
             if (stepNumber < step) {
-                // Previous steps are complete
+                // Previous steps
                 progressStep.classList.add('complete');
             } else if (stepNumber === step) {
-                // Current step is active
+                // Current step
                 progressStep.classList.add('active');
-            } 
+            }
             
-            // Special handling for the lines
-            // 1. Line between Step 1 and 2 should be active if we're in step 2 or higher
+            // Handle lines between steps
             if (stepNumber === 2 && step >= 2) {
                 progressStep.classList.add('line-active');
             }
             
-            // 2. Line between Step 2 and 3 should be active if we're in step 3
             if (stepNumber === 3 && step === 3) {
                 progressStep.classList.add('line-active');
             }
@@ -339,41 +317,33 @@ class UIController {
         const previousMode = this.state.editMode;
         this.state.editMode = mode;
         
-        // Update radio buttons if they exist
+        // Update radio buttons
         const manualRadio = document.getElementById('manual-edit');
         const promptRadio = document.getElementById('prompt-edit');
         
         if (manualRadio && promptRadio) {
-            if (mode === 'manual') {
-                manualRadio.checked = true;
-                promptRadio.checked = false;
-            } else {
-                manualRadio.checked = false;
-                promptRadio.checked = true;
-            }
+            manualRadio.checked = (mode === 'manual');
+            promptRadio.checked = (mode === 'prompt');
         }
         
         // Only proceed if on step 2
         if (this.state.currentStep !== 2) return;
         
-        // Check if we should cancel tokenization
+        // Check if we should cancel ongoing processes
         if (previousMode === 'manual' && mode === 'prompt' && this.tokenizationState.inProgress) {
-            console.log('Cancelling tokenization due to edit mode change from manual to prompt');
             this.tokenizationState.cancelled = true;
-            this.showLoading(false);  // Hide loading indicator immediately
+            this.showLoading(false);
         }
 
-        // Check if we should cancel processing
         if (previousMode === 'prompt' && mode === 'manual' && this.processingState.inProgress) {
-            console.log('Cancelling processing due to edit mode change from prompt to manual');
             this.processingState.cancelled = true;
-            this.showLoading(false);  // Hide loading indicator immediately
+            this.showLoading(false);
         }
         
-        // Make sure input method selection is hidden to fix the bug
+        // Make sure input selection is hidden
         if (this.sections.inputMethodSelection) {
             this.sections.inputMethodSelection.classList.add('hidden');
-            this.sections.inputMethodSelection.style.display = 'none'; // Force hide with inline style
+            this.sections.inputMethodSelection.style.display = 'none';
         }
         
         if (mode === 'manual') {
@@ -382,15 +352,13 @@ class UIController {
             manualEditor.classList.remove('hidden');
             this.sections.promptEditor.classList.add('hidden');
             
-            // Hide audio preview (we'll show waveform instead)
+            // Hide audio preview (waveform will show instead)
             this.sections.audioPreview.classList.add('hidden');
             
-            // If we already have tokenized data, build the editor
+            // Initialize editor if we have audio but no token data
             if (this.state.tokenData && this.state.transcribedText) {
                 this.buildManualEditor();
             } else if (this.audioElements.audioPlayer.src && !this.tokenizationState.inProgress) {
-                // If we have audio but no token data, fetch it
-                // Only start new tokenization if there isn't one already in progress
                 this.tokenizeAudio();
             }
         } else {
@@ -401,7 +369,7 @@ class UIController {
             this.sections.promptEditor.classList.remove('hidden');
             this.sections.audioPreview.classList.remove('hidden');
             
-            // Clean up manual editor resources
+            // Clean up manual editor
             this.cleanupEditors();
         }
     }
@@ -423,46 +391,22 @@ class UIController {
             const response = await fetch(audioUrl);
             const audioBlob = await response.blob();
             
-            // Check if tokenization was cancelled before proceeding
-            if (this.tokenizationState.cancelled) {
-                console.log('Tokenization cancelled');
-                return;
-            }
+            if (this.tokenizationState.cancelled) return;
             
             // Tokenize the audio
             const tokenizationResult = await AudioProcessor.tokenizeAudio(audioBlob);
             
-            // Check again if tokenization was cancelled
-            if (this.tokenizationState.cancelled) {
-                console.log('Tokenization cancelled after API call');
-                return;
-            }
+            if (this.tokenizationState.cancelled) return;
             
             // Store token data
             this.state.tokenData = tokenizationResult.tokens;
             this.state.transcribedText = tokenizationResult.text;
             
-            // Check for both conditions: edit mode still 'manual' and not cancelled
+            // Build editor if still in manual mode
             if (this.state.editMode === 'manual' && !this.tokenizationState.cancelled) {
-                console.log('Building manual editor after successful tokenization');
-                // Build the manual editor
                 this.buildManualEditor();
-            } else if (!this.tokenizationState.cancelled) {
-                // If not cancelled but edit mode changed
-                console.log('Edit mode changed during tokenization, skipping manual editor build');
-                // Make sure manual editor container is hidden
-                if (this.sections.manualEditor) {
-                    this.sections.manualEditor.classList.add('hidden');
-                }
-                // Make sure prompt editor is visible since we're now in prompt mode
-                this.sections.promptEditor.classList.remove('hidden');
-                this.sections.audioPreview.classList.remove('hidden');
-            } else {
-                // If cancelled, we don't need to update UI
-                console.log('Tokenization cancelled, skipping UI updates');
             }
         } catch (error) {
-            // Only show error if tokenization wasn't cancelled
             if (!this.tokenizationState.cancelled) {
                 console.error('Error tokenizing audio:', error);
                 this.showError('Failed to tokenize audio: ' + error.message);
@@ -471,10 +415,8 @@ class UIController {
                 this.setEditMode('prompt');
             }
         } finally {
-            // Reset tokenization in-progress flag
             this.tokenizationState.inProgress = false;
             
-            // Hide loading indicator only if not cancelled (to avoid UI flicker)
             if (!this.tokenizationState.cancelled) {
                 this.showLoading(false);
             }
@@ -485,16 +427,11 @@ class UIController {
      * Build the manual editor UI
      */
     buildManualEditor() {
-        // First check if we're still in manual mode - if not, don't build the editor
-        if (this.state.editMode !== 'manual') {
-            console.log('Skipping manual editor build because mode has changed to:', this.state.editMode);
-            return;
-        }
+        // Skip if not in manual mode
+        if (this.state.editMode !== 'manual') return;
         
-        // Get or create the manual editor container
+        // Get manual editor container
         const manualEditor = this.getManualEditorContainer();
-        
-        // Clear any existing content
         manualEditor.innerHTML = '';
         
         // Add header
@@ -513,7 +450,7 @@ class UIController {
         this.state.waveformEditor = new WaveformEditor(manualEditor);
         this.state.waveformEditor.initialize();
         
-        // Load audio into waveform editor
+        // Load audio
         this.state.waveformEditor.loadAudioElement(this.audioElements.audioPlayer);
         
         // Create token text editor
@@ -565,7 +502,7 @@ class UIController {
     }
     
     /**
-     * Clean up audio elements (revoke object URLs)
+     * Clean up audio elements
      */
     cleanupAudioElements() {
         if (this.audioElements.audioPlayer.src) {
@@ -628,7 +565,7 @@ class UIController {
     goToResultStep(processedBlob, prompt, metadata = {}) {
         this.state.processedAudioBlob = processedBlob;
         
-        // Display just the processed audio
+        // Display processed audio
         if (this.audioElements.processedAudio.src) {
             URL.revokeObjectURL(this.audioElements.processedAudio.src);
         }
@@ -636,8 +573,13 @@ class UIController {
         
         // Update text fields
         this.textElements.editPromptDisplay.textContent = `Edit prompt: "${prompt}"`;
-        this.textElements.processingDetails.textContent = metadata.processing_time ? 
-            `Processing time: ${metadata.processing_time.toFixed(2)}s` : '';
+        
+        if (metadata.processing_time) {
+            this.textElements.processingDetails.textContent = 
+                `Processing time: ${metadata.processing_time.toFixed(2)}s`;
+        } else {
+            this.textElements.processingDetails.textContent = '';
+        }
         
         // Go to step 3
         this.goToStep(3);
@@ -649,8 +591,6 @@ class UIController {
     async processManualEdits() {
         // Get edit operations from the token text editor
         const editOperations = this.state.tokenTextEditor.getEditOperations();
-        
-        console.log('Edit operations:', editOperations);
         
         // If no edits, show error
         if (editOperations.length === 0) {
@@ -712,15 +652,10 @@ class UIController {
         // Set processing state
         this.processingState.inProgress = true;
         this.processingState.cancelled = false;
-        
         this.showLoading(true);
         
         try {
-            // Check if processing was cancelled before starting
-            if (this.processingState.cancelled) {
-                console.log('Processing cancelled before starting');
-                return;
-            }
+            if (this.processingState.cancelled) return;
             
             // Get the current audio blob
             const audioUrl = this.audioElements.audioPlayer.src;
@@ -730,13 +665,9 @@ class UIController {
             // Process the audio
             const result = await AudioProcessor.processAudio(audioBlob, prompt);
             
-            // Check if processing was cancelled after API call
-            if (this.processingState.cancelled) {
-                console.log('Processing cancelled after API call');
-                return;
-            }
+            if (this.processingState.cancelled) return;
             
-            // Update UI with results (only if not cancelled)
+            // Update UI with results
             this.goToResultStep(result.processedBlob, prompt, result.metadata);
             
             // Setup download button
@@ -748,16 +679,12 @@ class UIController {
             };
             
         } catch (err) {
-            // Only show error if processing wasn't cancelled
             if (!this.processingState.cancelled) {
                 this.showError(`Error processing audio: ${err.message}`);
-                console.error('Processing error:', err);
             }
         } finally {
-            // Reset processing state
             this.processingState.inProgress = false;
             
-            // Hide loading indicator only if not cancelled
             if (!this.processingState.cancelled) {
                 this.showLoading(false);
             }
@@ -768,22 +695,19 @@ class UIController {
      * Go back to step 1
      */
     resetToStep1() {
-        // Cancel any ongoing tokenization
+        // Cancel any ongoing processes
         if (this.tokenizationState.inProgress) {
-            console.log('Cancelling ongoing tokenization');
             this.tokenizationState.cancelled = true;
         }
         
-        // Cancel any ongoing processing
         if (this.processingState.inProgress) {
-            console.log('Cancelling ongoing processing');
             this.processingState.cancelled = true;
         }
         
-        // Hide loading indicator immediately
+        // Hide loading indicator
         this.showLoading(false);
         
-        // Clean up audio resources
+        // Clean up resources
         window.audioRecorder.cleanup();
         this.cleanupAudioElements();
         
@@ -801,7 +725,7 @@ class UIController {
      * Go back to edit step to change the prompt
      */
     changePrompt() {
-        // Go back to step 2 with current mode
+        // Go back to step 2
         this.goToStep(2);
     }
     
@@ -809,16 +733,15 @@ class UIController {
      * Use the processed result as the new input audio
      */
     useProcessedResult() {
-        // Use the processed audio as the new input
         if (this.state.processedAudioBlob) {
             this.state.audioBlob = this.state.processedAudioBlob;
             this.audioElements.audioPlayer.src = URL.createObjectURL(this.state.processedAudioBlob);
         }
         
-        // Clear the prompt
+        // Clear prompt
         this.textElements.editPrompt.value = '';
         
-        // Reset token data since the audio has changed
+        // Reset token data
         this.state.tokenData = null;
         this.state.transcribedText = null;
         
@@ -831,15 +754,21 @@ class UIController {
      * @param {boolean} show - Whether to show or hide the loading indicator
      */
     showLoading(show) {
+        const processButton = document.getElementById('processButton');
+        
         if (show) {
             this.sections.loadingIndicator.classList.remove('hidden');
-            this.sections.loadingIndicator.style.cursor = 'not-allowed'; // Set cursor
-            document.getElementById('processButton').disabled = true;
-            document.getElementById('processButton').classList.add('opacity-50');
+            this.sections.loadingIndicator.style.cursor = 'not-allowed';
+            if (processButton) {
+                processButton.disabled = true;
+                processButton.classList.add('opacity-50');
+            }
         } else {
             this.sections.loadingIndicator.classList.add('hidden');
-            document.getElementById('processButton').disabled = false;
-            document.getElementById('processButton').classList.remove('opacity-50');
+            if (processButton) {
+                processButton.disabled = false;
+                processButton.classList.remove('opacity-50');
+            }
         }
     }
     
@@ -851,10 +780,8 @@ class UIController {
         this.sections.errorText.textContent = message;
         this.sections.errorMessage.classList.remove('hidden');
         
-        // Auto-hide error after 5 seconds
-        setTimeout(() => {
-            this.hideError();
-        }, 5000);
+        // Auto-hide after 5 seconds
+        setTimeout(() => this.hideError(), 5000);
     }
     
     /**
@@ -862,22 +789,6 @@ class UIController {
      */
     hideError() {
         this.sections.errorMessage.classList.add('hidden');
-    }
-    
-    /**
-     * Set the processed audio blob
-     * @param {Blob} blob - The processed audio blob
-     */
-    setProcessedAudio(blob) {
-        this.state.processedAudioBlob = blob;
-    }
-    
-    /**
-     * Get the current processed audio blob
-     * @returns {Blob|null} - The processed audio blob or null
-     */
-    getProcessedAudio() {
-        return this.state.processedAudioBlob;
     }
 }
 

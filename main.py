@@ -56,11 +56,17 @@ def delayed_cleanup(file_paths, delay_seconds=1800):
 async def tokenize_audio(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
+    semantic_only: bool = Form(True),
 ):
-    """Tokenize audio and return transcription with token metadata"""
+    """Tokenize audio and return transcription with token metadata
+
+    Args:
+        audio: The audio file to tokenize
+        semantic_only: If True, only extract semantic tokens (faster for frontend use)
+    """
     # Log details about the uploaded file
     logger.info(
-        f"Tokenizing file: {audio.filename}, Content-Type: {audio.content_type}"
+        f"Tokenizing file: {audio.filename}, Content-Type: {audio.content_type}, semantic_only={semantic_only}"
     )
 
     # Generate unique ID for the input file
@@ -86,51 +92,80 @@ async def tokenize_audio(
         device = setup_device()
 
         # Tokenize the audio using the AudioTokenizer
-        logger.info("Tokenizing audio to get token metadata...")
+        logger.info(
+            f"Tokenizing audio to get token metadata (semantic_only={semantic_only})..."
+        )
         tokenizer = AudioTokenizer(device=device)
-        tokenized_audio = tokenizer.tokenize(input_path)
+        tokenized_audio = tokenizer.tokenize(input_path, semantic_only=semantic_only)
 
         # Extract token metadata including timestamps
         tokens_metadata = []
 
-        # First build a mapping of character indices to their corresponding words
-        char_to_word = {}
-        if tokenized_audio.word_timestamps:
-            for word_info in tokenized_audio.word_timestamps:
-                word_start = tokenized_audio.text.find(word_info["word"])
-                if word_start >= 0:
-                    for i in range(word_start, word_start + len(word_info["word"])):
-                        char_to_word[i] = word_info
-
-        # Map tokens to text positions and extract metadata
-        for i in range(len(tokenized_audio.semantic_tokens)):
-            # Check if this token index maps to a text position
-            if i in tokenized_audio.token_to_text_map:
-                char_idx = tokenized_audio.token_to_text_map[i]
-
-                # Find the corresponding word/segment
-                word_info = char_to_word.get(char_idx)
-
-                if word_info:
+        if semantic_only:
+            # For semantic-only mode, create metadata based on word timestamps
+            if tokenized_audio.word_timestamps:
+                for i, word_info in enumerate(tokenized_audio.word_timestamps):
+                    # Map each word to a token index using the simplified mapping
                     tokens_metadata.append(
                         {
                             "token_idx": i,
                             "text": word_info["word"],
                             "start_time": word_info["start"],
                             "end_time": word_info["end"],
+                            "llama_token": tokenized_audio.llama_tokens[i]
+                            if i < len(tokenized_audio.llama_tokens)
+                            else None,
                         }
                     )
+        else:
+            # Use the original approach for RVQ tokens
+            # First build a mapping of character indices to their corresponding words
+            char_to_word = {}
+            if tokenized_audio.word_timestamps:
+                for word_info in tokenized_audio.word_timestamps:
+                    word_start = tokenized_audio.text.find(word_info["word"])
+                    if word_start >= 0:
+                        for i in range(word_start, word_start + len(word_info["word"])):
+                            char_to_word[i] = word_info
+
+            # Map tokens to text positions and extract metadata
+            for i in range(len(tokenized_audio.semantic_tokens)):
+                # Check if this token index maps to a text position
+                if i in tokenized_audio.token_to_text_map:
+                    char_idx = tokenized_audio.token_to_text_map[i]
+
+                    # Find the corresponding word/segment
+                    word_info = char_to_word.get(char_idx)
+
+                    if word_info:
+                        tokens_metadata.append(
+                            {
+                                "token_idx": i,
+                                "text": word_info["word"],
+                                "start_time": word_info["start"],
+                                "end_time": word_info["end"],
+                            }
+                        )
 
         # Schedule delayed cleanup of files (30 minutes TTL)
         background_tasks.add_task(delayed_cleanup, [input_path])
 
-        # Prepare response
-        response_data = {
-            "status": "success",
-            "session_id": session_id,
-            "text": tokenized_audio.text,
-            "tokens": tokens_metadata,
-        }
+        # Prepare response based on mode
+        if semantic_only:
+            response_data = {
+                "status": "success",
+                "session_id": session_id,
+                "text": tokenized_audio.text,
+                "tokens": tokens_metadata,
+                "llama_tokens": tokenized_audio.llama_tokens,
+            }
+        else:
+            response_data = {
+                "status": "success",
+                "session_id": session_id,
+                "text": tokenized_audio.text,
+                "tokens": tokens_metadata,
+            }
 
         return response_data
 

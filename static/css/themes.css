@@ -1,23 +1,23 @@
 /* 
 * themes.css
-* Contains color themes and variables for the application
+* Core theme variables and colors
 */
 
 :root {
-    /* Light theme colors */
-    --color-primary: #5B6529; /* Green from CSS */
-    --color-primary-light: #9DB859; /* Lighter green */
-    --color-primary-dark: #404A1C; /* Darker green */
-    --color-secondary: #B8B435; /* Yellow-green from CSS */
-    --color-secondary-light: #E2E8CC; /* Light yellowish */
-    --color-secondary-dark: #848C28; /* Darker yellow */
+    /* Colors */
+    --color-primary: #5B6529;
+    --color-primary-light: #9DB859;
+    --color-primary-dark: #404A1C;
+    --color-secondary: #B8B435;
+    --color-secondary-light: #E2E8CC;
+    --color-secondary-dark: #848C28;
     --color-dark: #111111;
     --color-light: #FFFFFF;
     --color-gray: #E5E7EB;
     --color-error: #B91C1C;
     
-    /* Common variables */
-    --transition-default: all 0.3s ease;
+    /* Spacing & UI */
+    --transition-default: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     --shadow-subtle: 0 2px 15px 0 rgba(160, 160, 160, 0.15);
     --radius-sm: 0.375rem;
     --radius-md: 0.5rem;
@@ -26,21 +26,21 @@
 
 /* Dark mode variables */
 .dark {
-    --color-primary: #9DB859; /* Lighter green for dark mode */
-    --color-primary-light: #B8C97A; /* Even lighter green */
-    --color-primary-dark: #738033; /* Medium green */
-    --color-secondary: #738033; /* Secondary green for dark mode */
-    --color-secondary-light: #9DB859; /* Lighter green */
-    --color-secondary-dark: #404A1C; /* Darker green */
+    --color-primary: #9DB859;
+    --color-primary-light: #B8C97A;
+    --color-primary-dark: #738033;
+    --color-secondary: #738033;
+    --color-secondary-light: #9DB859;
+    --color-secondary-dark: #404A1C;
     --color-dark: #F0F0F0;
     --color-light: #1A1A1A;
     --color-gray: #2D2D2D;
     --shadow-subtle: 0 2px 15px 0 rgba(0, 0, 0, 0.5);
 }
 
-/* Basic body styles related to theming */
+/* Basic body styles */
 body {
-    background-color: #F6F6F6; /* Light background */
+    background-color: #F6F6F6;
     color: var(--color-dark);
     line-height: 1.5;
     transition: var(--transition-default);
@@ -50,7 +50,7 @@ body {
     background-color: #121212;
 }
 
-/* Text color classes used in SVG and other themed elements */
+/* Logo color classes */
 .text-gray-bars {
     color: var(--color-dark);
     transition: color 0.15s ease;
@@ -66,10 +66,10 @@ body {
 }
 
 .text-green-bar {
-    color: #5DA831; /* Lighter green in light mode */
+    color: #5DA831;
     transition: color 0.15s ease;
 }
 
 .dark .text-green-bar {
-    color: var(--color-primary); /* Use primary color in dark mode */
+    color: var(--color-primary);
 }

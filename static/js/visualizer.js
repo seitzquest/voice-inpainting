@@ -1,5 +1,5 @@
 /**
- * visualizer.js
+ * Simplified visualizer.js
  * Handles audio visualization using Web Audio API
  */
 
@@ -10,24 +10,22 @@ class AudioVisualizer {
         this.audioSourceNode = null;
         this.dataArray = null;
         this.waveformBars = null;
-        this.audioSourceConnected = false;
         this.animationFrame = null;
-        this.isActive = false;        // Whether visualization is active
-        this.visualizationType = null; // 'recording' or 'playback'
-        this.currentSelector = null;   // Current waveform selector
+        this.isActive = false;
+        this.currentSelector = null;
     }
     
     /**
      * Clean up audio context and connections
      */
     cleanup() {
-        // Cancel any ongoing animation
+        // Cancel animation
         if (this.animationFrame) {
             cancelAnimationFrame(this.animationFrame);
             this.animationFrame = null;
         }
         
-        // Disconnect the audio source if it exists
+        // Disconnect audio source
         if (this.audioSourceNode) {
             try {
                 this.audioSourceNode.disconnect();
@@ -37,19 +35,21 @@ class AudioVisualizer {
             this.audioSourceNode = null;
         }
         
-        // Close the audio context if it exists
+        // Close audio context
         if (this.audioContext) {
-            this.audioContext.close().catch(err => {
+            try {
+                this.audioContext.close().catch(err => {
+                    console.error('Error closing audio context:', err);
+                });
+            } catch (err) {
                 console.error('Error closing audio context:', err);
-            });
+            }
             this.audioContext = null;
             this.analyser = null;
         }
         
         // Reset flags
-        this.audioSourceConnected = false;
         this.isActive = false;
-        this.visualizationType = null;
         this.currentSelector = null;
     }
     
@@ -59,35 +59,33 @@ class AudioVisualizer {
      * @param {string} waveformSelector - CSS selector for waveform bars container
      */
     setupStreamVisualization(stream, waveformSelector) {
+        // Clean up previous context
+        this.cleanup();
+        
         try {
-            // Clean up previous audio context
-            this.cleanup();
-            
-            // Create new audio context
+            // Create audio context
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Create an analyser
+            // Create analyser
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 256;
-            this.analyser.smoothingTimeConstant = 0.7; // Better smoothing
+            this.analyser.smoothingTimeConstant = 0.7;
             
-            // Create a source from the stream
+            // Create source from stream
             const source = this.audioContext.createMediaStreamSource(stream);
             source.connect(this.analyser);
             this.audioSourceNode = source;
             
-            // Set up data array for frequency data
+            // Set up data array
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
-            // Set state
-            this.visualizationType = 'recording';
+            // Store selector
             this.currentSelector = waveformSelector;
             
-            // Get waveform bars
+            // Get waveform bars after a short delay to ensure DOM is ready
             setTimeout(() => {
                 this.waveformBars = document.querySelectorAll(`${waveformSelector} .waveform-bar`);
-                // Start visualization
-                this.startRecordingVisualization();
+                this.startVisualization();
             }, 50);
         } catch (err) {
             console.error('Error setting up audio visualization:', err);
@@ -100,36 +98,33 @@ class AudioVisualizer {
      * @param {string} waveformSelector - CSS selector for waveform bars container
      */
     setupAudioElementVisualization(audioElement, waveformSelector) {
+        // Clean up first
+        this.cleanup();
+        
         try {
-            // Clean up first
-            this.cleanup();
-            
-            // Create a new audio context
+            // Create audio context
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Create an analyser with enhanced settings for playback
+            // Create analyser
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 256;
-            this.analyser.smoothingTimeConstant = 0.5; // Less smoothing for more responsive playback
+            this.analyser.smoothingTimeConstant = 0.5;
             this.analyser.minDecibels = -90;
             this.analyser.maxDecibels = -10;
             
-            // Create a source from the audio element
+            // Create source from audio element
             this.audioSourceNode = this.audioContext.createMediaElementSource(audioElement);
             this.audioSourceNode.connect(this.analyser);
             this.analyser.connect(this.audioContext.destination);
-            this.audioSourceConnected = true;
             
-            // Set up data array for frequency data
+            // Set up data array
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
-            // Set state
-            this.visualizationType = 'playback';
+            // Store selector
             this.currentSelector = waveformSelector;
             
             // Get waveform bars
             this.waveformBars = document.querySelectorAll(`${waveformSelector} .waveform-bar`);
-            
         } catch (err) {
             console.error('Error setting up playback visualization:', err);
             this.cleanup();
@@ -137,9 +132,9 @@ class AudioVisualizer {
     }
     
     /**
-     * Start recording visualization
+     * Start visualization
      */
-    startRecordingVisualization() {
+    startVisualization() {
         this.isActive = true;
         this.visualize();
     }
@@ -155,7 +150,7 @@ class AudioVisualizer {
             this.animationFrame = null;
         }
         
-        // Reset the current waveform if we have one
+        // Reset waveform
         if (this.currentSelector) {
             this.resetWaveform(this.currentSelector);
         }
@@ -175,7 +170,7 @@ class AudioVisualizer {
      * Update visualization based on audio data
      */
     visualize() {
-        // If visualization is not active, don't continue
+        // If visualization is not active or missing components, don't continue
         if (!this.isActive || !this.analyser || !this.waveformBars || this.waveformBars.length === 0) {
             return;
         }
@@ -183,19 +178,15 @@ class AudioVisualizer {
         // Get frequency data
         this.analyser.getByteFrequencyData(this.dataArray);
         
-        // Determine scaling based on visualization type
-        const scaleFactor = this.visualizationType === 'playback' ? 1.5 : 1.0; // Boost playback visualization
-        
-        // Use frequency data to adjust bar heights
+        // Update bar heights based on frequency data
         for (let i = 0; i < this.waveformBars.length; i++) {
-            // Use different frequency bands based on the bar index
-            // This creates a more natural waveform appearance
+            // Use different frequency bands for each bar
             const index = Math.floor((i / this.waveformBars.length) * (this.dataArray.length * 0.75));
             const value = this.dataArray[index];
             
-            // Apply scaling and handle bounds
-            const percent = Math.min(1.0, (value / 255) * scaleFactor);
-            const height = 5 + (percent * 25); // Scale between 5px and 30px
+            // Scale value to height (5px to 30px)
+            const percent = value / 255;
+            const height = 5 + (percent * 25);
             
             this.waveformBars[i].style.height = `${height}px`;
         }
@@ -216,8 +207,8 @@ class AudioVisualizer {
         // Start visualization
         this.isActive = true;
         
-        // If audio isn't ready, wait for it
-        if (audioElement.readyState < 2) { // HAVE_CURRENT_DATA or higher
+        // Wait for audio to be ready if needed
+        if (audioElement.readyState < 2) {
             audioElement.addEventListener('canplay', () => {
                 if (this.isActive) {
                     this.visualize();
@@ -229,7 +220,7 @@ class AudioVisualizer {
         // Start visualization
         this.visualize();
         
-        // Monitor playback state - if it ends/pauses, stop visualization
+        // Stop visualization when playback ends or pauses
         audioElement.addEventListener('pause', () => {
             this.pauseVisualization();
         }, { once: true });

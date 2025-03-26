@@ -1,5 +1,5 @@
 /**
- * audio-recorder.js
+ * Simplified audio-recorder.js
  * Handles audio recording functionality
  */
 
@@ -27,49 +27,49 @@ class AudioRecorder {
      * @param {MediaStream} stream - Audio stream to record from
      */
     startRecording(stream) {
+        // Reset state
         this.audioChunks = [];
         this.recordingSeconds = 0;
         this.isPaused = false;
         this.audioStream = stream;
         
-        // Immediately reset and display timer
+        // Reset and display timer
         this.recordingTime.textContent = "0:00";
         
         // Set up audio visualization
         window.AudioVisualizer.setupStreamVisualization(stream, '#recordingWaveform');
         
-        // Use higher quality audio encoding where available
-        const options = { mimeType: 'audio/webm;codecs=opus' };
+        // Create MediaRecorder with best available options
         try {
+            const options = { mimeType: 'audio/webm;codecs=opus' };
             this.mediaRecorder = new MediaRecorder(stream, options);
         } catch (e) {
             console.log('MediaRecorder with specified options not supported, using default');
             this.mediaRecorder = new MediaRecorder(stream);
         }
         
-        // Capture data more frequently for better quality
+        // Capture data chunks
         this.mediaRecorder.addEventListener('dataavailable', event => {
             if (event.data.size > 0) {
                 this.audioChunks.push(event.data);
             }
         });
         
-        // Request data chunks every 250ms for smoother recording
+        // Request data chunks frequently for smoother recording
         this.mediaRecorder.start(250);
         
+        // Handle recording completion
         this.mediaRecorder.addEventListener('stop', async () => {
             // Create blob with proper MIME type
             this.tempAudioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
             
-            // Convert webm to wav 
+            // Convert webm to wav if needed
             if (this.tempAudioBlob.type === 'audio/webm') {
                 try {
-                    // Use Web Audio API to convert to WAV
                     const wavBlob = await AudioProcessor.convertToWav(this.tempAudioBlob);
                     this.tempAudioBlob = wavBlob;
                 } catch (err) {
                     console.error('Error converting audio format:', err);
-                    // Continue with original blob if conversion fails
                 }
             }
             
@@ -79,9 +79,11 @@ class AudioRecorder {
             }
             this.previewPlayer.src = URL.createObjectURL(this.tempAudioBlob);
             
+            // Clear timer interval
             clearInterval(this.recordingInterval);
         });
         
+        // Start timer
         this.recordingInterval = setInterval(() => {
             if (!this.isPaused) {
                 this.recordingSeconds++;
@@ -96,7 +98,7 @@ class AudioRecorder {
      * Pause the current recording
      */
     pauseRecording() {
-        if (this.mediaRecorder) {
+        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
             this.mediaRecorder.pause();
             this.isPaused = true;
         }
@@ -106,12 +108,9 @@ class AudioRecorder {
      * Resume a paused recording
      */
     resumeRecording() {
-        if (this.mediaRecorder) {
+        if (this.mediaRecorder && this.mediaRecorder.state === 'paused') {
             this.mediaRecorder.resume();
             this.isPaused = false;
-            
-            // Resume visualization
-            window.AudioVisualizer.visualize();
         }
     }
     
@@ -119,7 +118,7 @@ class AudioRecorder {
      * Finish and save the recording
      */
     finishRecording() {
-        if (this.mediaRecorder) {
+        if (this.mediaRecorder && (this.mediaRecorder.state === 'recording' || this.mediaRecorder.state === 'paused')) {
             this.mediaRecorder.stop();
             
             // Stop all tracks in the stream
@@ -127,7 +126,7 @@ class AudioRecorder {
                 this.audioStream.getTracks().forEach(track => track.stop());
             }
             
-            // Clean up audio context
+            // Clean up audio visualization
             window.AudioVisualizer.cleanup();
         }
     }
@@ -173,7 +172,7 @@ class AudioRecorder {
             this.audioStream = null;
         }
         
-        // Clean up audio context from visualizer
+        // Clean up audio visualization
         window.AudioVisualizer.cleanup();
         
         // Reset state

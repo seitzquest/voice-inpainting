@@ -1,5 +1,5 @@
 /**
- * theme-controller.js
+ * Simplified theme-controller.js
  * Handles theme switching functionality
  */
 
@@ -9,12 +9,13 @@ class ThemeController {
         this.themeToggle = document.getElementById('themeToggle');
         this.lightIcon = document.getElementById('lightIcon');
         this.darkIcon = document.getElementById('darkIcon');
-        
-        this.init();
     }
     
+    /**
+     * Initialize theme controller
+     */
     init() {
-        // Check saved theme or browser preference
+        // Check saved theme or system preference
         const savedTheme = localStorage.getItem('theme');
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         
@@ -22,13 +23,13 @@ class ThemeController {
             this.setDarkTheme();
         }
         
-        // Add event listener to the theme toggle button
+        // Add toggle event listener
         this.themeToggle.addEventListener('click', () => this.toggleTheme());
         
         // Listen for system theme changes
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
             if (!localStorage.getItem('theme')) {
-                // Only auto-switch if user hasn't manually set a preference
+                // Only auto-switch if user hasn't set preference
                 if (e.matches) {
                     this.setDarkTheme();
                 } else {
@@ -38,6 +39,9 @@ class ThemeController {
         });
     }
     
+    /**
+     * Toggle between light and dark themes
+     */
     toggleTheme() {
         if (this.html.classList.contains('dark')) {
             this.setLightTheme();
@@ -46,6 +50,9 @@ class ThemeController {
         }
     }
     
+    /**
+     * Set dark theme
+     */
     setDarkTheme() {
         this.html.classList.add('dark');
         this.lightIcon.classList.remove('hidden');
@@ -53,6 +60,9 @@ class ThemeController {
         localStorage.setItem('theme', 'dark');
     }
     
+    /**
+     * Set light theme
+     */
     setLightTheme() {
         this.html.classList.remove('dark');
         this.darkIcon.classList.remove('hidden');
@@ -63,5 +73,7 @@ class ThemeController {
 
 // Initialize theme controller when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    window.themeController = new ThemeController();
+    const themeController = new ThemeController();
+    themeController.init();
+    window.themeController = themeController;
 });

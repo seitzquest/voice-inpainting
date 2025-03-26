@@ -8,7 +8,7 @@ import torch
 import torchaudio
 import whisper
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Union
 from loguru import logger
 from huggingface_hub import hf_hub_download
 from moshi.models import loaders
@@ -24,27 +24,30 @@ class TokenizedAudio:
     audio: torch.Tensor
     sample_rate: int
 
-    # Mimi RVQ tokens (num_codebooks, seq_len)
-    rvq_tokens: torch.Tensor
+    # Mimi RVQ tokens (num_codebooks, seq_len) - may be None when semantic_only=True
+    rvq_tokens: Optional[torch.Tensor] = None
 
     # Text extracted from semantic tokens via Whisper
-    text: str
+    text: str = ""
 
     # Segment-level whisper results with timestamps
-    segments: List[Dict]
+    segments: List[Dict] = None
 
-    # Semantic token indices from first codebook
-    semantic_tokens: List[int]
+    # Semantic token indices from first codebook or Llama tokens
+    semantic_tokens: List[int] = None
 
     # Mapping between text position and token indices
-    text_to_token_map: Dict[int, int]
-    token_to_text_map: Dict[int, int]
+    text_to_token_map: Dict[int, int] = None
+    token_to_text_map: Dict[int, int] = None
 
     # Speaker identifier
     speaker_id: int = 0
 
     # Word timestamps from Whisper
     word_timestamps: Optional[List[Dict]] = None
+
+    # Llama tokens when semantic_only=True
+    llama_tokens: Optional[List[int]] = None
 
 
 class AudioTokenizer:
@@ -96,17 +99,22 @@ class AudioTokenizer:
 
         return tokenizer
 
-    def tokenize(self, audio_path: str, speaker_id: int = 0) -> TokenizedAudio:
-        """Tokenize audio to RVQ tokens
+    def tokenize(
+        self, audio_path: str, speaker_id: int = 0, semantic_only: bool = False
+    ) -> TokenizedAudio:
+        """Tokenize audio to RVQ tokens or semantic tokens only
 
         Args:
             audio_path: Path to the audio file
             speaker_id: Speaker identifier
+            semantic_only: If True, only perform semantic tokenization (faster)
 
         Returns:
             TokenizedAudio object with tokens and metadata
         """
-        logger.info(f"Tokenizing audio from {audio_path}")
+        logger.info(
+            f"Tokenizing audio from {audio_path}, semantic_only={semantic_only}"
+        )
 
         # Load audio and normalize
         waveform, sr = torchaudio.load(audio_path)
@@ -123,15 +131,21 @@ class AudioTokenizer:
         # Normalize the audio
         waveform = waveform / (torch.max(torch.abs(waveform)) + 1e-8)
 
-        # Tokenize with Mimi
-        logger.info("Extracting RVQ tokens with Mimi...")
-        waveform_device = waveform.to(self.device)
-        rvq_tokens = self.mimi.encode(waveform_device.unsqueeze(0))[
-            0
-        ]  # (num_codebooks, seq_len)
+        # Initialize variables
+        rvq_tokens = None
+        semantic_tokens = None
+        llama_tokens = None
 
-        # Extract semantic tokens (first codebook)
-        semantic_tokens = rvq_tokens[0].cpu().tolist()
+        # Tokenize with Mimi if not semantic_only
+        if not semantic_only:
+            logger.info("Extracting RVQ tokens with Mimi...")
+            waveform_device = waveform.to(self.device)
+            rvq_tokens = self.mimi.encode(waveform_device.unsqueeze(0))[
+                0
+            ]  # (num_codebooks, seq_len)
+            semantic_tokens = (
+                rvq_tokens[0].cpu().tolist()
+            )  # First codebook contains semantic tokens
 
         # Transcribe audio with Whisper
         logger.info("Transcribing audio with Whisper...")
@@ -164,26 +178,111 @@ class AudioTokenizer:
             if "words" in segment:
                 word_timestamps.extend(segment["words"])
 
+        # If semantic-only, get Llama tokens for the transcribed text
+        if semantic_only:
+            logger.info("Creating Llama tokens for transcribed text...")
+            llama_tokens = self._get_llama_tokens_for_text(transcribed_text, speaker_id)
+
         # Create mappings between text positions and token positions
-        text_to_token_map, token_to_text_map = self._align_text_to_tokens(
-            transcribed_text, word_timestamps, rvq_tokens
-        )
+        text_to_token_map = {}
+        token_to_text_map = {}
+
+        if not semantic_only:
+            text_to_token_map, token_to_text_map = self._align_text_to_tokens(
+                transcribed_text, word_timestamps, rvq_tokens
+            )
+        else:
+            # Create simplified mapping based on word timestamps when in semantic_only mode
+            text_to_token_map, token_to_text_map = self._create_semantic_text_token_map(
+                transcribed_text, word_timestamps
+            )
 
         logger.info(f"Transcribed text: {transcribed_text}")
-        logger.info(f"RVQ tokens shape: {rvq_tokens.shape}")
+        if not semantic_only:
+            logger.info(f"RVQ tokens shape: {rvq_tokens.shape}")
+
+        if semantic_only:
+            logger.info(
+                f"Llama tokens count: {len(llama_tokens) if llama_tokens else 0}"
+            )
 
         return TokenizedAudio(
             audio=waveform.squeeze(0).cpu(),
             sample_rate=self.sample_rate,
-            rvq_tokens=rvq_tokens.cpu(),
+            rvq_tokens=rvq_tokens.cpu() if rvq_tokens is not None else None,
             text=transcribed_text,
             segments=segments,
-            semantic_tokens=semantic_tokens,
+            semantic_tokens=semantic_tokens if not semantic_only else None,
             text_to_token_map=text_to_token_map,
             token_to_text_map=token_to_text_map,
             speaker_id=speaker_id,
             word_timestamps=word_timestamps,
+            llama_tokens=llama_tokens,
         )
+
+    def _get_llama_tokens_for_text(self, text: str, speaker_id: int) -> List[int]:
+        """Get Llama tokens for the given text
+
+        Args:
+            text: Text to tokenize
+            speaker_id: Speaker identifier to include in the formatted text
+
+        Returns:
+            List of Llama token IDs
+        """
+        # Format text with speaker ID as expected by the model
+        formatted_text = f"[{speaker_id}]{text}"
+
+        # Tokenize using the Llama tokenizer
+        tokens = self.text_tokenizer.encode(formatted_text)
+
+        return tokens
+
+    def _create_semantic_text_token_map(
+        self, text: str, word_timestamps: List[Dict]
+    ) -> Tuple[Dict[int, int], Dict[int, int]]:
+        """Create a simplified mapping between text and semantic token positions
+
+        When in semantic_only mode, this creates an approximate mapping that can
+        be used for alignment purposes. Actual token indices are based on word positions.
+
+        Args:
+            text: Transcribed text
+            word_timestamps: List of word timestamps from Whisper
+
+        Returns:
+            Tuple of (text_to_token_map, token_to_text_map)
+        """
+        text_to_token_map = {}
+        token_to_text_map = {}
+
+        # Track the current position in the text
+        text_pos = 0
+        token_idx = 0
+
+        # For each word with timestamp
+        for word_data in word_timestamps:
+            word = word_data["word"]
+
+            # Find the word position in text
+            word_pos = text[text_pos:].find(word)
+            if word_pos >= 0:
+                word_pos += text_pos
+
+                # Map each character in the word to an approximate token position
+                for i in range(len(word)):
+                    char_pos = word_pos + i
+                    # Each character in a word maps to the same token index for simplicity
+                    text_to_token_map[char_pos] = token_idx
+                    token_to_text_map[token_idx] = char_pos
+
+                # Move to next token position
+                token_idx += 1
+
+                # Update text position for next search
+                text_pos = word_pos + len(word)
+
+        return text_to_token_map, token_to_text_map
 
     def _align_text_to_tokens(
         self, text: str, word_timestamps: List[Dict], rvq_tokens: torch.Tensor
@@ -319,7 +418,8 @@ class AudioTokenizer:
         end_token_idx += 3
 
         # Ensure we don't exceed the available tokens
-        end_token_idx = min(end_token_idx, tokenized_audio.rvq_tokens.shape[1] - 1)
+        if tokenized_audio.rvq_tokens is not None:
+            end_token_idx = min(end_token_idx, tokenized_audio.rvq_tokens.shape[1] - 1)
 
         # Ensure start_token_idx is before end_token_idx
         if start_token_idx > end_token_idx:
@@ -384,6 +484,11 @@ class AudioTokenizer:
         Returns:
             Tuple of (left_context_tokens, edit_region_tokens, right_context_tokens)
         """
+        if tokenized_audio.rvq_tokens is None:
+            raise ValueError(
+                "Cannot extract token context when using semantic_only mode"
+            )
+
         start_idx, end_idx = edit_range
 
         # Extract context tokens

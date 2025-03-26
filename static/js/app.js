@@ -1,5 +1,5 @@
 /**
- * app.js
+ * Simplified app.js
  * Main application script that coordinates all modules
  */
 
@@ -22,7 +22,7 @@ class VoiceInpaintingApp {
         this.downloadButton = document.getElementById('downloadButton');
         this.previewPlayer = document.getElementById('previewPlayer');
         
-        // Working data
+        // State
         this.currentAudioBlob = null;
         this.isRecordingPaused = false;
     }
@@ -46,7 +46,7 @@ class VoiceInpaintingApp {
         // Processing
         this.processButton.addEventListener('click', () => window.uiController.processAudio());
         
-        // Navigation and control buttons
+        // Navigation buttons
         this.resetAudioButton.addEventListener('click', () => window.uiController.resetToStep1());
         this.changePromptButton.addEventListener('click', () => window.uiController.changePrompt());
         this.useResultButton.addEventListener('click', () => window.uiController.useProcessedResult());
@@ -56,14 +56,12 @@ class VoiceInpaintingApp {
             }
         });
         
-        // Audio ended events
+        // Audio ended event
         this.previewPlayer.addEventListener('ended', () => this.resetPlayButton());
-        
-        console.log('Voice Inpainting App initialized');
     }
     
     /**
-     * Start recording audio from the user's microphone
+     * Start recording audio
      */
     async startRecording() {
         try {
@@ -71,13 +69,10 @@ class VoiceInpaintingApp {
             window.audioRecorder.startRecording(stream);
             window.uiController.showRecordingUI();
             this.isRecordingPaused = false;
-            
-            // Set button state for recording
             this.setPauseButtonState(false);
             
             // Ensure waveform animation is active
             document.querySelector('.recording-waveform').classList.add('recording-active');
-            
         } catch (err) {
             window.uiController.showError('Microphone access denied or not available.');
             console.error('Error accessing microphone:', err);
@@ -85,7 +80,7 @@ class VoiceInpaintingApp {
     }
     
     /**
-     * Set pause button state (pause or resume)
+     * Set pause button state
      * @param {boolean} isPaused - Whether recording is paused
      */
     setPauseButtonState(isPaused) {
@@ -97,7 +92,6 @@ class VoiceInpaintingApp {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
-            // Use standard play button style
             this.pauseRecordingBtn.classList.remove('pause-btn');
             this.pauseRecordingBtn.classList.add('play-btn');
         } else {
@@ -107,7 +101,6 @@ class VoiceInpaintingApp {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
-            // Use standard pause button style
             this.pauseRecordingBtn.classList.remove('play-btn');
             this.pauseRecordingBtn.classList.add('pause-btn');
         }
@@ -126,19 +119,14 @@ class VoiceInpaintingApp {
         if (this.isRecordingPaused) {
             // Pause recording
             recorder.pauseRecording();
-            
-            // Update button state
             this.setPauseButtonState(true);
             
             // Stop waveform animation and visualization
             document.querySelector('#recordingWaveform').classList.remove('recording-active');
             window.AudioVisualizer.pauseVisualization();
-            
         } else {
             // Resume recording
             recorder.resumeRecording();
-            
-            // Update button state
             this.setPauseButtonState(false);
             
             // Resume waveform animation and visualization
@@ -155,11 +143,7 @@ class VoiceInpaintingApp {
         if (recorder.mediaRecorder && (recorder.mediaRecorder.state === 'recording' || recorder.mediaRecorder.state === 'paused')) {
             recorder.finishRecording();
             window.uiController.showPausedRecordingUI();
-            
-            // Reset recording state
             this.isRecordingPaused = false;
-            
-            // Ensure play button is in the correct state (green play icon)
             this.resetPlayButton();
         }
     }
@@ -172,16 +156,12 @@ class VoiceInpaintingApp {
         if (!tempBlob) return;
         
         if (this.previewPlayer.paused) {
-            // Clean up previous audio processing
+            // Clean up previous audio
             window.AudioVisualizer.cleanup();
-            
-            // Create a fresh audio element to avoid connection errors
             this.createFreshAudioElement();
             
-            // Create a new blob URL and set it as the source
+            // Set up audio for playback
             this.previewPlayer.src = URL.createObjectURL(tempBlob);
-            
-            // Set up audio visualization for the new player
             window.AudioVisualizer.setupAudioElementVisualization(this.previewPlayer, '#playbackWaveform');
             
             // Change button to pause icon
@@ -190,47 +170,37 @@ class VoiceInpaintingApp {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
-            // Use standard pause button style
             this.playRecordingBtn.classList.remove('play-btn');
             this.playRecordingBtn.classList.add('pause-btn');
             
-            // Add class to enable animation during playback
+            // Add animation during playback
             document.getElementById('playbackWaveform').classList.add('recording-active');
             
-            // Start playback and visualization
+            // Start visualization
             this.previewPlayer.addEventListener('play', () => {
                 window.AudioVisualizer.visualizePlayback(this.previewPlayer);
             }, { once: true });
             
-            // Start playback with small delay to ensure context is ready
+            // Start playback
             setTimeout(() => {
                 this.previewPlayer.play().catch(err => {
                     console.error('Error playing audio:', err);
-                    // Reset UI to play state if playback fails
                     this.resetPlayButton();
                 });
             }, 100);
         } else {
-            // Toggle the button to play
+            // Pause playback
             this.resetPlayButton();
-            
-            // Pause the audio
             this.previewPlayer.pause();
-            
-            // Pause visualization
             window.AudioVisualizer.pauseVisualization();
         }
     }
     
     /**
      * Creates a fresh audio element for the preview player
-     * Helps avoid "already connected" errors with Web Audio API
      */
     createFreshAudioElement() {
-        // First, check if the element is in the DOM
-        const existingPlayer = document.getElementById('previewPlayer');
-        
-        // Clean up old element src if it exists
+        // Clean up old element
         if (this.previewPlayer && this.previewPlayer.src) {
             URL.revokeObjectURL(this.previewPlayer.src);
         }
@@ -241,14 +211,13 @@ class VoiceInpaintingApp {
         newPlayer.className = 'hidden';
         newPlayer.addEventListener('ended', () => this.resetPlayButton());
         
-        // Find the container
-        const container = document.querySelector('#pausedRecordingState').closest('.drop-zone');
-        
-        // Replace or append
+        // Find container and replace
+        const existingPlayer = document.getElementById('previewPlayer');
         if (existingPlayer && existingPlayer.parentNode) {
             existingPlayer.parentNode.replaceChild(newPlayer, existingPlayer);
-        } else if (container) {
-            container.appendChild(newPlayer);
+        } else {
+            const container = document.querySelector('#pausedRecordingState').closest('.drop-zone');
+            if (container) container.appendChild(newPlayer);
         }
         
         // Update reference
@@ -265,14 +234,11 @@ class VoiceInpaintingApp {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
         `;
-        // Use standard play button style
         this.playRecordingBtn.classList.remove('pause-btn');
         this.playRecordingBtn.classList.add('play-btn');
         
-        // Remove animation class
+        // Reset waveform
         document.getElementById('playbackWaveform').classList.remove('recording-active');
-        
-        // Reset waveform bars to silent state
         window.AudioVisualizer.resetWaveform('#playbackWaveform', 2);
     }
     
@@ -280,13 +246,8 @@ class VoiceInpaintingApp {
      * Delete the current recording and reset UI
      */
     trashRecording() {
-        // Reset recording
         window.audioRecorder.cleanup();
-        
-        // Reset UI using the UI controller - go back to step 1
         window.uiController.resetToStep1();
-        
-        // Reset recording state
         this.isRecordingPaused = false;
     }
     
@@ -325,7 +286,5 @@ class VoiceInpaintingApp {
 document.addEventListener('DOMContentLoaded', () => {
     const app = new VoiceInpaintingApp();
     app.init();
-    
-    // Store app instance globally for debugging
     window.voiceInpaintingApp = app;
 });
