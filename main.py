@@ -109,9 +109,12 @@ async def tokenize_audio(
                     tokens_metadata.append(
                         {
                             "token_idx": i,
-                            "text": word_info["word"],
+                            "text": word_info["text"],  # Changed from "word" to "text"
                             "start_time": word_info["start"],
                             "end_time": word_info["end"],
+                            "confidence": word_info.get(
+                                "confidence", 1.0
+                            ),  # Added confidence
                             "llama_token": tokenized_audio.llama_tokens[i]
                             if i < len(tokenized_audio.llama_tokens)
                             else None,
@@ -123,9 +126,10 @@ async def tokenize_audio(
             char_to_word = {}
             if tokenized_audio.word_timestamps:
                 for word_info in tokenized_audio.word_timestamps:
-                    word_start = tokenized_audio.text.find(word_info["word"])
+                    word = word_info["text"]  # Changed from "word" to "text"
+                    word_start = tokenized_audio.text.find(word)
                     if word_start >= 0:
-                        for i in range(word_start, word_start + len(word_info["word"])):
+                        for i in range(word_start, word_start + len(word)):
                             char_to_word[i] = word_info
 
             # Map tokens to text positions and extract metadata
@@ -141,9 +145,14 @@ async def tokenize_audio(
                         tokens_metadata.append(
                             {
                                 "token_idx": i,
-                                "text": word_info["word"],
+                                "text": word_info[
+                                    "text"
+                                ],  # Changed from "word" to "text"
                                 "start_time": word_info["start"],
                                 "end_time": word_info["end"],
+                                "confidence": word_info.get(
+                                    "confidence", 1.0
+                                ),  # Added confidence
                             }
                         )
 

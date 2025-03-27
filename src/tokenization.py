@@ -6,9 +6,9 @@ Converts audio to semantic and acoustic tokens using Mimi and Llama.
 import os
 import torch
 import torchaudio
-import whisper
+import whisper_timestamped
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional
 from loguru import logger
 from huggingface_hub import hf_hub_download
 from moshi.models import loaders
@@ -74,7 +74,8 @@ class AudioTokenizer:
         self.text_tokenizer = self._load_llama3_tokenizer()
 
         logger.info("Loading Whisper ASR model...")
-        self.whisper_model = whisper.load_model("base", device=self.device)
+        # Load the whisper model directly - whisper_timestamped uses this in its transcribe function
+        self.whisper_model = whisper_timestamped.load_model("base", device=self.device)
 
     def _load_llama3_tokenizer(self):
         """Load the Llama 3 tokenizer with special token handling
@@ -147,21 +148,22 @@ class AudioTokenizer:
                 rvq_tokens[0].cpu().tolist()
             )  # First codebook contains semantic tokens
 
-        # Transcribe audio with Whisper
-        logger.info("Transcribing audio with Whisper...")
+        # Transcribe audio with whisper_timestamped
+        logger.info("Transcribing audio with whisper_timestamped...")
 
         # Save temporary file for Whisper if tensor is provided
         temp_path = None
         if os.path.exists(audio_path):
-            whisper_result = self.whisper_model.transcribe(
-                audio_path, word_timestamps=True, language="en"
+            # Use whisper_timestamped.transcribe instead
+            whisper_result = whisper_timestamped.transcribe(
+                model=self.whisper_model, audio=audio_path, language="en"
             )
         else:
-            # Create a temporary file to use with whisper
+            # Create a temporary file to use with whisper_timestamped
             temp_path = "/tmp/temp_whisper_input.wav"
             torchaudio.save(temp_path, waveform, self.sample_rate)
-            whisper_result = self.whisper_model.transcribe(
-                temp_path, word_timestamps=True, language="en"
+            whisper_result = whisper_timestamped.transcribe(
+                model=self.whisper_model, audio=temp_path, language="en"
             )
 
         # Clean up temporary file if created
@@ -173,6 +175,7 @@ class AudioTokenizer:
         segments = whisper_result["segments"]
 
         # Create flat list of all words with timestamps
+        # whisper_timestamped provides words directly in each segment
         word_timestamps = []
         for segment in segments:
             if "words" in segment:
@@ -262,7 +265,9 @@ class AudioTokenizer:
 
         # For each word with timestamp
         for word_data in word_timestamps:
-            word = word_data["word"]
+            word = word_data[
+                "text"
+            ]  # Changed from "word" to "text" for whisper_timestamped
 
             # Find the word position in text
             word_pos = text[text_pos:].find(word)
@@ -308,7 +313,9 @@ class AudioTokenizer:
 
         # For each word with timestamp
         for word_data in word_timestamps:
-            word = word_data["word"]
+            word = word_data[
+                "text"
+            ]  # Changed from "word" to "text" for whisper_timestamped
             start_time = word_data["start"]
             end_time = word_data["end"]
 

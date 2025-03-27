@@ -37,9 +37,9 @@ uv run main.py
 ![Architecture diagram](./architecture_diagram.svg?)
 
 - **RVQ Token Processing**: Works at the acoustic token level for higher fidelity edits
-- **Sesame CSM**: Generates natural speech while preserving voice characteristics 
-- **Whisper**: Provides accurate speech transcription
-- **LLaMA 3**: Identifies edit regions from natural language prompts
+- **Sesame CSM**: Generates natural speech while preserving voice characteristics
+- **Whisper Timestamped**: Provides speech transcription with timestamps based on Dynamic Time Warping (DTW)
+- **LLaMA 3**: Automatically identifies edit regions for prompt-based editing
 
 ## Key Features
 
