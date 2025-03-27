@@ -10,7 +10,7 @@
 
 /* Waveform editor styles */
 .waveform-editor-container {
-    background-color: #E2E8CC;
+    background-color: var(--color-light);
     border-radius: var(--radius-md);
     position: relative;
     overflow: hidden;
@@ -31,13 +31,14 @@
 
 .token-editor-input {
     color: transparent;
-    caret-color: rgb(240, 240, 240); /* Keep cursor visible */
+    caret-color: #333333; /* Dark cursor for light mode */
 }
 
 .dark .token-editor-input {
     background-color: #2A2A2A;
     color: #F0F0F0;
     border-color: #444;
+    caret-color: rgb(240, 240, 240); /* Light cursor for dark mode */
 }
 
 .token-editor-input:focus {

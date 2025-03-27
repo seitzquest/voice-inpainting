@@ -1,5 +1,6 @@
 /**
- * Improved token-text-editor.js with robust token tracking
+ * Improved token-text-editor.js with fixes for space handling, duplicate words,
+ * and accurate token modification tracking
  */
 
 class TokenTextEditor {
@@ -24,6 +25,7 @@ class TokenTextEditor {
         this.originalText = '';
         this.originalTokens = [];  // Will store {tokenIdx, text, start, end} of initial tokens
         this.activeTokens = [];    // Will store currently active tokens {tokenIdx, start, end}
+        this.previousActiveTokens = []; // Remember previous active state for tracking stability
         this.selectedTokens = [];
         this.modifiedTokens = [];
         
@@ -176,6 +178,7 @@ class TokenTextEditor {
         
         // Reset modifications
         this.modifiedTokens = [];
+        this.previousActiveTokens = [...this.activeTokens];
         
         // Notify waveform editor
         if (this.waveformEditor) {
@@ -214,24 +217,51 @@ class TokenTextEditor {
             // Find positions of this token text in the original text
             const positions = this.findTokenPositions(this.originalText, tokenText);
             
-            if (positions.length > 0) {
-                // For initialization, just take the first match (in a real scenario, 
-                // we'd use a more sophisticated approach to determine which match is correct)
-                const initialPosition = positions[0];
+            // Store all position candidates for this token
+            const candidatePositions = [];
+            
+            for (const position of positions) {
+                // Check if this position overlaps with already assigned tokens
+                const hasOverlap = this.originalTokens.some(existingToken => 
+                    existingToken.start < position.end && existingToken.end > position.start
+                );
+                
+                if (!hasOverlap) {
+                    candidatePositions.push(position);
+                }
+            }
+            
+            if (candidatePositions.length > 0) {
+                // For initialization, try to find the best match by checking timing
+                // If we have multiple candidate positions, try to keep tokens in time order
+                let bestPosition = candidatePositions[0];
+                
+                if (candidatePositions.length > 1 && this.originalTokens.length > 0) {
+                    // Find the last assigned token
+                    const lastToken = this.originalTokens[this.originalTokens.length - 1];
+                    
+                    // Find a position that follows the last token
+                    for (const position of candidatePositions) {
+                        if (position.start >= lastToken.end) {
+                            bestPosition = position;
+                            break;
+                        }
+                    }
+                }
                 
                 // Store original token information
                 this.originalTokens.push({
                     tokenIdx: tokenIdx,
                     text: tokenText,
-                    start: initialPosition.start,
-                    end: initialPosition.end
+                    start: bestPosition.start,
+                    end: bestPosition.end
                 });
                 
                 // Initially, all tokens are active
                 this.activeTokens.push({
                     tokenIdx: tokenIdx,
-                    start: initialPosition.start,
-                    end: initialPosition.end
+                    start: bestPosition.start,
+                    end: bestPosition.end
                 });
             }
         }
@@ -243,6 +273,7 @@ class TokenTextEditor {
     
     /**
      * Find all positions of a token in text
+     * FIX 1: Improved to handle spaces correctly and work with duplicate words
      * @param {string} text - Text to search in
      * @param {string} tokenText - Token text to find
      * @returns {Array} - Array of {start, end} positions
@@ -250,14 +281,43 @@ class TokenTextEditor {
     findTokenPositions(text, tokenText) {
         const positions = [];
         
-        // Use regex with word boundaries for precise matching
-        const regex = new RegExp(`\\b${this.escapeRegExp(tokenText)}\\b`, 'g');
+        // Escape regex special characters but preserve spaces exactly
+        const escapedTokenText = this.escapeRegExp(tokenText);
+        
+        // Create a pattern that preserves spaces exactly and handles word boundaries
+        // Better than \b which has issues with spaces and punctuation
+        let pattern = escapedTokenText;
+        
+        // For word-like tokens, create custom boundaries that respect space sequences
+        // but only if the token starts/ends with a word character
+        if (/^\w/.test(tokenText)) {
+            // Pattern for token starting with word char: preceded by start or non-word char or spaces
+            pattern = `(?:^|[^\\w]|\\s+)${pattern}`;
+        }
+        if (/\w$/.test(tokenText)) {
+            // Pattern for token ending with word char: followed by end or non-word char or spaces
+            pattern = `${pattern}(?:$|[^\\w]|\\s+)`;
+        }
+        
+        // Need to use a global search to find all occurrences
+        const regex = new RegExp(pattern, 'g');
         let match;
         
         while ((match = regex.exec(text)) !== null) {
+            // Adjust the match index and end position to exclude the boundary matchers themselves
+            let startOffset = 0;
+            let endOffset = 0;
+            
+            if (/^\w/.test(tokenText) && match[0] !== tokenText) {
+                // If there's a boundary prefix, calculate its length
+                startOffset = match[0].indexOf(tokenText);
+                // Adjust the regex index for future matches
+                regex.lastIndex = match.index + startOffset + tokenText.length;
+            }
+            
             positions.push({
-                start: match.index,
-                end: match.index + tokenText.length
+                start: match.index + startOffset,
+                end: match.index + startOffset + tokenText.length
             });
         }
         
@@ -265,12 +325,60 @@ class TokenTextEditor {
     }
     
     /**
-     * Escape regular expression special characters
-     * @param {string} string - String to escape
-     * @returns {string} - Escaped string for regex
+     * Get context around a token position
+     * Used to better identify duplicate words/phrases
+     * @param {string} text - Full text
+     * @param {number} start - Token start position
+     * @param {number} end - Token end position
+     * @param {number} contextSize - Number of characters to include as context
+     * @returns {Object} - Context object with before/after text
      */
-    escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    getTokenContext(text, start, end, contextSize = 20) {
+        const beforeStart = Math.max(0, start - contextSize);
+        const afterEnd = Math.min(text.length, end + contextSize);
+        
+        return {
+            before: text.substring(beforeStart, start),
+            after: text.substring(end, afterEnd)
+        };
+    }
+    
+    /**
+     * Calculate similarity between two contexts
+     * @param {Object} context1 - First context {before, after}
+     * @param {Object} context2 - Second context {before, after}
+     * @returns {number} - Similarity score
+     */
+    calculateContextSimilarity(context1, context2) {
+        // Calculate similarity scores for before and after contexts
+        let beforeSimilarity = 0;
+        let afterSimilarity = 0;
+        
+        // Compare characters from right to left for "before" context
+        const minBeforeLength = Math.min(context1.before.length, context2.before.length);
+        for (let i = 1; i <= minBeforeLength; i++) {
+            if (context1.before[context1.before.length - i] === 
+                context2.before[context2.before.length - i]) {
+                beforeSimilarity++;
+            } else {
+                // Minor penalty for first mismatch, severe for subsequent ones
+                break;
+            }
+        }
+        
+        // Compare characters from left to right for "after" context
+        const minAfterLength = Math.min(context1.after.length, context2.after.length);
+        for (let i = 0; i < minAfterLength; i++) {
+            if (context1.after[i] === context2.after[i]) {
+                afterSimilarity++;
+            } else {
+                // Minor penalty for first mismatch, severe for subsequent ones
+                break;
+            }
+        }
+        
+        // Combined score with equal weighting
+        return beforeSimilarity + afterSimilarity;
     }
     
     /**
@@ -380,11 +488,23 @@ class TokenTextEditor {
     }
     
     /**
+     * Escape regular expression special characters
+     * @param {string} string - String to escape
+     * @returns {string} - Escaped string for regex
+     */
+    escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    /**
      * Handle input events
      */
     handleInput() {
         if (this.isProcessingChange || this.isInitializing) return;
         this.isProcessingChange = true;
+        
+        // Store previous active tokens before updating
+        this.previousActiveTokens = [...this.activeTokens];
         
         // Update token tracking after text change
         this.updateTokenTracking();
@@ -411,7 +531,7 @@ class TokenTextEditor {
     
     /**
      * Update token tracking after text edit
-     * This is the core algorithm that finds and updates token positions
+     * FIX 2: Improved to correctly handle duplicate words using position history and change detection
      */
     updateTokenTracking() {
         const currentText = this.textArea.value;
@@ -419,40 +539,234 @@ class TokenTextEditor {
         // Start fresh with active tokens
         this.activeTokens = [];
         
-        // For each original token, try to find it in the current text
-        for (const originalToken of this.originalTokens) {
+        // Track which positions have been claimed by tokens
+        const claimedRanges = [];
+        
+        // Detect the regions that changed between the last text and current text
+        const changedRegions = this.detectTextChanges(this.lastText, currentText);
+        
+        // Track which tokens were potentially modified based on change regions
+        // This is crucial for correctly identifying which duplicate token was modified
+        const tokensInChangedRegions = this.previousActiveTokens.filter(token => {
+            return changedRegions.some(region => 
+                (token.start < region.end && token.end > region.start)
+            );
+        }).map(token => token.tokenIdx);
+        
+        // Process tokens in two passes:
+        // 1. First process tokens that weren't in changed regions (stable tokens)
+        // 2. Then process tokens that were in changed regions (potentially modified)
+        
+        // Sort tokens by their original position
+        const sortedOriginalTokens = [...this.originalTokens].sort((a, b) => a.start - b.start);
+        
+        // FIRST PASS: Process tokens that weren't in changed regions
+        const stableTokens = sortedOriginalTokens.filter(token => 
+            !tokensInChangedRegions.includes(token.tokenIdx)
+        );
+        
+        for (const originalToken of stableTokens) {
             const tokenIdx = originalToken.tokenIdx;
             const tokenText = originalToken.text;
+            
+            // Find previous position for this token
+            const prevPosition = this.previousActiveTokens.find(t => t.tokenIdx === tokenIdx);
+            
+            // Find all occurrences of this token text in the current text
+            const positions = this.findTokenPositions(currentText, tokenText);
+            
+            if (positions.length > 0) {
+                // Filter out positions that overlap with already claimed ranges
+                const availablePositions = positions.filter(pos => 
+                    !claimedRanges.some(range => 
+                        (pos.start < range.end && pos.end > range.start)
+                    )
+                );
+                
+                if (availablePositions.length > 0) {
+                    // For stable tokens, try to keep them at the same position if possible
+                    let bestPosition = null;
+                    
+                    if (prevPosition) {
+                        // Try to find exact position match first
+                        const exactMatch = availablePositions.find(pos => 
+                            pos.start === prevPosition.start && pos.end === prevPosition.end
+                        );
+                        
+                        if (exactMatch) {
+                            bestPosition = exactMatch;
+                        } else {
+                            // Find closest match by position
+                            let minDistance = Infinity;
+                            for (const pos of availablePositions) {
+                                const distance = Math.abs(pos.start - prevPosition.start);
+                                if (distance < minDistance) {
+                                    minDistance = distance;
+                                    bestPosition = pos;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // If no match with history, use first available
+                    if (!bestPosition) {
+                        bestPosition = availablePositions[0];
+                    }
+                    
+                    // Add token at this position
+                    this.activeTokens.push({
+                        tokenIdx: tokenIdx,
+                        start: bestPosition.start,
+                        end: bestPosition.end
+                    });
+                    
+                    // Mark this range as claimed
+                    claimedRanges.push({
+                        start: bestPosition.start,
+                        end: bestPosition.end
+                    });
+                }
+            }
+        }
+        
+        // SECOND PASS: Process tokens that were in changed regions
+        const changedTokens = sortedOriginalTokens.filter(token => 
+            tokensInChangedRegions.includes(token.tokenIdx)
+        );
+        
+        for (const originalToken of changedTokens) {
+            const tokenIdx = originalToken.tokenIdx;
+            const tokenText = originalToken.text;
+            
+            // Find previous position for this token
+            const prevPosition = this.previousActiveTokens.find(t => t.tokenIdx === tokenIdx);
             
             // Find all occurrences of this token in the current text
             const positions = this.findTokenPositions(currentText, tokenText);
             
             if (positions.length > 0) {
-                // If token found, activate it
+                // Filter out positions that overlap with already claimed ranges
+                const availablePositions = positions.filter(pos => 
+                    !claimedRanges.some(range => 
+                        (pos.start < range.end && pos.end > range.start)
+                    )
+                );
                 
-                // If multiple matches, find the one closest to its last known position
-                let bestPosition = null;
-                let minDistance = Infinity;
-                
-                // Last known position is from the original
-                const lastKnownPosition = originalToken.start;
-                
-                for (const position of positions) {
-                    const distance = Math.abs(position.start - lastKnownPosition);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        bestPosition = position;
+                if (availablePositions.length > 0) {
+                    // For potentially modified tokens, we need more sophisticated matching
+                    let bestPosition = null;
+                    let bestScore = -Infinity;
+                    
+                    // Get original context
+                    const originalContext = this.getTokenContext(
+                        this.originalText, 
+                        originalToken.start, 
+                        originalToken.end
+                    );
+                    
+                    // Also get previous context if available
+                    const prevContext = prevPosition ? 
+                        this.getTokenContext(this.lastText, prevPosition.start, prevPosition.end) : null;
+                    
+                    for (const position of availablePositions) {
+                        // Get current context
+                        const currentContext = this.getTokenContext(
+                            currentText, 
+                            position.start, 
+                            position.end
+                        );
+                        
+                        // SCORING SYSTEM - combining multiple factors:
+                        
+                        // 1. Context similarity with original text
+                        const originalContextScore = this.calculateContextSimilarity(
+                            originalContext, 
+                            currentContext
+                        ) * 2; // Weight factor
+                        
+                        // 2. Context similarity with previous position (stronger weight)
+                        const prevContextScore = prevContext ? 
+                            this.calculateContextSimilarity(prevContext, currentContext) * 4 : 0;
+                        
+                        // 3. Position similarity to previous position
+                        let positionScore = 0;
+                        if (prevPosition) {
+                            // Use exponential decay for position differences
+                            const posDiff = Math.abs(position.start - prevPosition.start);
+                            positionScore = 1000 * Math.exp(-posDiff / 50);
+                        }
+                        
+                        // 4. Special handling for changed regions - KEY TO FIXING DUPLICATES
+                        let changeRegionScore = 0;
+                        const isInChangedRegion = changedRegions.some(region => 
+                            (position.start <= region.end && position.end >= region.start)
+                        );
+                        
+                        // If previous position was in a changed region, we want to analyze differently
+                        if (prevPosition) {
+                            const wasPrevInChangedRegion = changedRegions.some(region => 
+                                (prevPosition.start <= region.end && prevPosition.end >= region.start)
+                            );
+                            
+                            if (wasPrevInChangedRegion) {
+                                if (isInChangedRegion) {
+                                    // If both old and new positions are in changed regions,
+                                    // this might be the same token that moved slightly due to edits
+                                    if (Math.abs(position.start - prevPosition.start) < 20) {
+                                        changeRegionScore = 500; // Strong bonus for likely the same token
+                                    } else {
+                                        changeRegionScore = -200; // Penalty for distant positions
+                                    }
+                                } else {
+                                    // Previous was in changed region but current isn't - 
+                                    // this might indicate this token was copied/duplicated
+                                    changeRegionScore = -400;
+                                }
+                            } else {
+                                if (isInChangedRegion) {
+                                    // Previous wasn't in changed region but current is -
+                                    // likely not the right match for this token
+                                    changeRegionScore = -700; // Strong penalty
+                                } else {
+                                    // Neither in changed region - stable match
+                                    changeRegionScore = 300;
+                                }
+                            }
+                        }
+                        
+                        // Combined score
+                        const combinedScore = 
+                            originalContextScore + 
+                            prevContextScore + 
+                            positionScore + 
+                            changeRegionScore;
+                        
+                        if (combinedScore > bestScore) {
+                            bestScore = combinedScore;
+                            bestPosition = position;
+                        }
+                    }
+                    
+                    // If we found a match, add it as an active token
+                    if (bestPosition) {
+                        this.activeTokens.push({
+                            tokenIdx: tokenIdx,
+                            start: bestPosition.start,
+                            end: bestPosition.end
+                        });
+                        
+                        // Mark this range as claimed
+                        claimedRanges.push({
+                            start: bestPosition.start,
+                            end: bestPosition.end
+                        });
                     }
                 }
-                
-                // Add as active token
-                this.activeTokens.push({
-                    tokenIdx: tokenIdx,
-                    start: bestPosition.start,
-                    end: bestPosition.end
-                });
             }
         }
+        
+        // Sort active tokens by position
+        this.activeTokens.sort((a, b) => a.start - b.start);
         
         // Update modified tokens list - any token not active is considered modified
         const activeTokenIndices = this.activeTokens.map(token => token.tokenIdx);
@@ -460,6 +774,52 @@ class TokenTextEditor {
         this.modifiedTokens = this.originalTokens
             .filter(token => !activeTokenIndices.includes(token.tokenIdx))
             .map(token => token.tokenIdx);
+    }
+    
+    /**
+     * Detect regions of text that changed between old and new text
+     * Improved to detect multiple changed regions
+     * @param {string} oldText - Previous text
+     * @param {string} newText - Current text
+     * @returns {Array} - Array of {start, end} ranges that changed
+     */
+    detectTextChanges(oldText, newText) {
+        const changes = [];
+        
+        // If either text is empty, the entire text is different
+        if (!oldText || !newText) {
+            return [{start: 0, end: Math.max(oldText?.length || 0, newText?.length || 0)}];
+        }
+        
+        // Find common prefix length
+        let prefixLength = 0;
+        const minLength = Math.min(oldText.length, newText.length);
+        
+        while (prefixLength < minLength && oldText[prefixLength] === newText[prefixLength]) {
+            prefixLength++;
+        }
+        
+        // Find common suffix length (starting from the end of strings)
+        let suffixLength = 0;
+        while (
+            suffixLength < minLength - prefixLength && 
+            oldText[oldText.length - 1 - suffixLength] === newText[newText.length - 1 - suffixLength]
+        ) {
+            suffixLength++;
+        }
+        
+        // If there's a change, record the changed region
+        const oldChangeLength = oldText.length - prefixLength - suffixLength;
+        const newChangeLength = newText.length - prefixLength - suffixLength;
+        
+        if (oldChangeLength > 0 || newChangeLength > 0) {
+            changes.push({
+                start: prefixLength,
+                end: newText.length - suffixLength
+            });
+        }
+        
+        return changes;
     }
 
     /**
@@ -523,6 +883,7 @@ class TokenTextEditor {
      */
     getEditOperations() {
         const editOperations = [];
+        const currentText = this.textArea.value;
         
         // If no modified tokens, return empty array
         if (this.modifiedTokens.length === 0) {
@@ -551,6 +912,7 @@ class TokenTextEditor {
                         end_time: token?.end_time || 0
                     };
                 })
+                .filter(t => t !== null)
                 .sort((a, b) => a.start_time - b.start_time);
             
             if (tokenData.length === 0) continue;
@@ -561,11 +923,8 @@ class TokenTextEditor {
                 originalText += data.originalText;
             }
             
-            // Find current text in the document based on context
-            // For simplicity, we're returning an empty string for edited text
-            // For a more accurate solution, we'd need to analyze the document
-            // to find what replaced these tokens
-            const editedText = '';
+            // Find what text has replaced these tokens
+            const editedText = this.inferEditedTextForTokens(tokenIndices, currentText);
             
             // Create edit operation
             editOperations.push({
@@ -577,6 +936,75 @@ class TokenTextEditor {
         }
         
         return editOperations;
+    }
+    
+    /**
+     * Infer what text has replaced a group of modified tokens
+     * @param {Array} modifiedTokenIndices - Array of modified token indices
+     * @param {string} currentText - Current text
+     * @returns {string} - The text that likely replaced these tokens
+     */
+    inferEditedTextForTokens(modifiedTokenIndices, currentText) {
+        // Sort original tokens by their position
+        const sortedOriginalTokens = [...this.originalTokens].sort((a, b) => a.start - b.start);
+        
+        // Find the positions of the modified tokens in the original sequence
+        const positions = sortedOriginalTokens
+            .map((token, index) => ({ index, tokenIdx: token.tokenIdx }))
+            .filter(item => modifiedTokenIndices.includes(item.tokenIdx))
+            .map(item => item.index);
+        
+        if (positions.length === 0) return '';
+        
+        // Find the range of positions
+        const firstModifiedPos = Math.min(...positions);
+        const lastModifiedPos = Math.max(...positions);
+        
+        // Find anchor tokens before and after the modified group
+        let beforeAnchor = null;
+        for (let i = firstModifiedPos - 1; i >= 0; i--) {
+            const token = sortedOriginalTokens[i];
+            // Check if this token is still active in the current text
+            const activeToken = this.activeTokens.find(t => t.tokenIdx === token.tokenIdx);
+            if (activeToken) {
+                beforeAnchor = activeToken;
+                break;
+            }
+        }
+        
+        let afterAnchor = null;
+        for (let i = lastModifiedPos + 1; i < sortedOriginalTokens.length; i++) {
+            const token = sortedOriginalTokens[i];
+            // Check if this token is still active in the current text
+            const activeToken = this.activeTokens.find(t => t.tokenIdx === token.tokenIdx);
+            if (activeToken) {
+                afterAnchor = activeToken;
+                break;
+            }
+        }
+        
+        // Extract the text between the anchors in the current text
+        let editedText = '';
+        
+        if (beforeAnchor && afterAnchor) {
+            // We have anchors on both sides
+            editedText = currentText.substring(beforeAnchor.end, afterAnchor.start);
+        } else if (beforeAnchor) {
+            // Only have an anchor before - take text from there to the end or a reasonable length
+            const maxLength = 100; // Reasonable maximum replacement length
+            const endPos = Math.min(beforeAnchor.end + maxLength, currentText.length);
+            editedText = currentText.substring(beforeAnchor.end, endPos);
+        } else if (afterAnchor) {
+            // Only have an anchor after - take text from the beginning or a reasonable length before
+            const maxLength = 100; // Reasonable maximum replacement length
+            const startPos = Math.max(0, afterAnchor.start - maxLength);
+            editedText = currentText.substring(startPos, afterAnchor.start);
+        } else {
+            // No anchors on either side - entire text might have been modified
+            editedText = currentText;
+        }
+        
+        return editedText;
     }
 
     /**
@@ -647,6 +1075,7 @@ class TokenTextEditor {
         this.modifiedTokens = [];
         this.originalTokens = [];
         this.activeTokens = [];
+        this.previousActiveTokens = [];
     }
 }
 

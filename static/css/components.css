@@ -251,7 +251,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem 0.75rem;
-    background-color: var(--color-secondary-light);
+    background-color: var(--color-light);
     border-radius: 9999px;
     box-shadow: var(--shadow-subtle);
     width: 100%;
