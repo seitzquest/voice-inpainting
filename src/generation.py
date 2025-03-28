@@ -77,42 +77,82 @@ class TokenGenerator:
         Returns:
             Segment with context information
         """
-        # Extract audio context around the edit point
-        context_audio = self.tokenizer.extract_context_audio(
-            tokenized_audio,
-            (edit_op.start_token_idx, edit_op.end_token_idx),
-            context_seconds,
+        # Determine if we have pre-padding context from the EditOperation
+        has_prepadding = (
+            edit_op.prepadding_start_token_idx >= 0
+            and edit_op.prepadding_end_token_idx >= 0
+            and edit_op.prepadding_text
         )
 
-        # Find the appropriate text context by looking at whisper segments
-        # that overlap with our audio context
+        # Extract audio context based on pre-padding if available
+        if has_prepadding:
+            logger.info(f"Using pre-padding context: '{edit_op.prepadding_text}'")
+            # Use the prepadding context for audio as well
+            context_audio = self.tokenizer.extract_context_audio(
+                tokenized_audio,
+                (edit_op.prepadding_start_token_idx, edit_op.start_token_idx),
+                context_seconds,
+            )
+        else:
+            # Fall back to regular context extraction (from both sides)
+            logger.info("No pre-padding available, extracting general context")
+            context_audio = self.tokenizer.extract_context_audio(
+                tokenized_audio,
+                (edit_op.start_token_idx, edit_op.end_token_idx),
+                context_seconds,
+            )
+
+        # Prepare the text context, combining pre-padding and general context
         token_frame_rate = 12.5  # frames per second
-        start_time = max(
-            0, (edit_op.start_token_idx / token_frame_rate) - context_seconds
-        )
-        end_time = (edit_op.end_token_idx / token_frame_rate) + context_seconds
 
-        # Get text segments that overlap with our context
-        context_text = ""
-        for segment in tokenized_audio.segments:
-            seg_start = segment["start"]
-            seg_end = segment["end"]
+        if has_prepadding:
+            # Use the pre-padding text directly, ensuring we maintain its integrity
+            context_text = edit_op.prepadding_text
 
-            # If segment overlaps with our context window and isn't the part we're replacing
-            if seg_end > start_time and seg_start < end_time:
-                segment_text = segment["text"]
-                if edit_op.original_text in segment_text:
-                    # Skip the part we're replacing to avoid confusing the model
-                    segment_text = segment_text.replace(edit_op.original_text, "[...]")
-                context_text += " " + segment_text
+            # For insertion or deletion cases, handle special formatting
+            if not edit_op.original_text.strip():
+                # Insertion case: no text to remove
+                context_text = f"{context_text}"
+            elif not edit_op.edited_text.strip():
+                # Deletion case: text is removed without replacement
+                context_text = f"{context_text}"
+            else:
+                # Standard replacement
+                context_text = f"{context_text}"
 
-        # Clean up context text
-        context_text = context_text.strip()
+            logger.info(f"Using pre-padding context text: '{context_text}'")
+        else:
+            # Fall back to the original approach of extracting context from transcript
+            start_time = max(
+                0, (edit_op.start_token_idx / token_frame_rate) - context_seconds
+            )
+            end_time = (edit_op.end_token_idx / token_frame_rate) + context_seconds
+
+            # Get text segments that overlap with our context window
+            context_text = ""
+            for segment in tokenized_audio.segments:
+                seg_start = segment["start"]
+                seg_end = segment["end"]
+
+                # If segment overlaps with our context window and isn't the part we're replacing
+                if seg_end > start_time and seg_start < end_time:
+                    segment_text = segment["text"]
+                    if edit_op.original_text in segment_text:
+                        # Skip the part we're replacing to avoid confusing the model
+                        segment_text = segment_text.replace(
+                            edit_op.original_text, "[...]"
+                        )
+                    context_text += " " + segment_text
+
+            # Clean up context text
+            context_text = context_text.strip()
+
+        # Fallback if no context was found
         if not context_text:
-            # Fallback if no appropriate context found
+            # Provide a neutral context that won't bias the generation
             context_text = "Please continue with natural tone and pace."
 
-        logger.info(f"Prepared context: '{context_text}'")
+        logger.info(f"Final context for generation: '{context_text}'")
 
         # Move context audio to the same device as the model
         context_audio_device = context_audio.to(self.device)
@@ -133,6 +173,10 @@ class TokenGenerator:
         Returns:
             Estimated length in milliseconds
         """
+        # If text is empty (deletion case), return minimal duration
+        if not text.strip():
+            return 500  # Minimal duration for deletion
+
         # Average speaking rate is about 150 words per minute
         # That's 2.5 words per second or 400ms per word
         words = text.split()
@@ -170,9 +214,19 @@ class TokenGenerator:
         Returns:
             Generated RVQ tokens
         """
+        # Handle special cases
+        if not edit_op.edited_text.strip():
+            # Pure deletion - return empty tensor
+            logger.info("Pure deletion detected, returning empty token tensor")
+            return torch.zeros(
+                (tokenized_audio.rvq_tokens.shape[0], 0),
+                dtype=tokenized_audio.rvq_tokens.dtype,
+                device=tokenized_audio.rvq_tokens.device,
+            )
+
         logger.info(f"Generating replacement tokens for: '{edit_op.edited_text}'")
 
-        # Prepare context
+        # Prepare context with pre-padding info
         context_segment = self._prepare_context_segment(tokenized_audio, edit_op)
 
         # Estimate appropriate audio length

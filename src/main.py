@@ -2,7 +2,7 @@
 Main pipeline for voice inpainting with RVQ tokens.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import torch
 import torchaudio
 import os
@@ -46,7 +46,7 @@ def voice_inpainting(
     debug_dir: str = "data/debug_output",
     temperature: float = 0.7,
     topk: int = 30,
-) -> None:
+) -> Tuple[torch.Tensor, torch.Tensor, int]:
     """Edit a voice message based on a prompt using RVQ tokens
 
     Args:
@@ -58,6 +58,9 @@ def voice_inpainting(
         debug_dir: Directory to save debug files if debug is True
         temperature: Temperature for token generation
         topk: Top-k value for sampling during generation
+
+    Returns:
+        Tuple of (fused_tokens, final_audio, final_sr)
     """
     start_time = time.time()
 
@@ -98,18 +101,34 @@ def voice_inpainting(
             if tokenized_audio.word_timestamps:
                 for i, word in enumerate(tokenized_audio.word_timestamps):
                     f.write(
-                        f"{i}: '{word['word']}' ({word['start']:.2f}s - {word['end']:.2f}s)\n"
+                        f"{i}: '{word['text']}' ({word['start']:.2f}s - {word['end']:.2f}s)\n"
                     )
 
     # Step 2: Identify edit region in tokens
     logger.info("Identifying edit region based on prompt...")
-    editor = SemanticEditor(tokenizer)
+    editor = SemanticEditor(
+        tokenizer, load_llm=True
+    )  # Need LLM for automatic edit detection
     edit_op = editor.find_edit_region(tokenized_audio, edit_prompt)
 
     # Calculate time range for the edit
     token_frame_rate = 12.5  # frames per second
     start_time_sec = edit_op.start_token_idx / token_frame_rate
     end_time_sec = edit_op.end_token_idx / token_frame_rate
+
+    # Also calculate prepadding time range if available
+    prepadding_start_time_sec = -1
+    prepadding_end_time_sec = -1
+    has_prepadding = (
+        edit_op.prepadding_start_token_idx >= 0
+        and edit_op.prepadding_end_token_idx >= 0
+    )
+
+    if has_prepadding:
+        prepadding_start_time_sec = (
+            edit_op.prepadding_start_token_idx / token_frame_rate
+        )
+        prepadding_end_time_sec = edit_op.prepadding_end_token_idx / token_frame_rate
 
     if debug:
         with open(os.path.join(debug_dir, "03_edit_region.txt"), "w") as f:
@@ -124,6 +143,15 @@ def voice_inpainting(
                 f"Edit length: {edit_op.end_token_idx - edit_op.start_token_idx} frames, {end_time_sec - start_time_sec:.2f} seconds\n"
             )
 
+            if has_prepadding:
+                f.write(f"\nPre-padding context: '{edit_op.prepadding_text}'\n")
+                f.write(
+                    f"Pre-padding token range: {edit_op.prepadding_start_token_idx} to {edit_op.prepadding_end_token_idx}\n"
+                )
+                f.write(
+                    f"Pre-padding time range: {prepadding_start_time_sec:.2f}s to {prepadding_end_time_sec:.2f}s\n"
+                )
+
         # Extract and save just the portion to be edited
         with torch.inference_mode():
             edit_tokens = tokenized_audio.rvq_tokens[
@@ -133,6 +161,17 @@ def voice_inpainting(
                 edit_audio, edit_sr = tokenizer.reconstruct_audio(edit_tokens)
                 edit_path = os.path.join(debug_dir, "03b_original_edit_region.wav")
                 torchaudio.save(edit_path, edit_audio.unsqueeze(0), edit_sr)
+
+            # Also save the pre-padding portion if available
+            if has_prepadding:
+                prepad_tokens = tokenized_audio.rvq_tokens[
+                    :,
+                    edit_op.prepadding_start_token_idx : edit_op.prepadding_end_token_idx,
+                ]
+                if prepad_tokens.shape[1] > 0:
+                    prepad_audio, prepad_sr = tokenizer.reconstruct_audio(prepad_tokens)
+                    prepad_path = os.path.join(debug_dir, "03c_prepadding_region.wav")
+                    torchaudio.save(prepad_path, prepad_audio.unsqueeze(0), prepad_sr)
 
     # Step 3: Generate new tokens for the edit
     logger.info("Generating new tokens for the edited segment...")
@@ -146,15 +185,21 @@ def voice_inpainting(
     if debug:
         # Reconstruct and save just the generated audio
         with torch.inference_mode():
-            gen_audio, gen_sr = tokenizer.reconstruct_audio(generated_tokens)
-            gen_path = os.path.join(debug_dir, "04_generated_segment.wav")
-            torchaudio.save(gen_path, gen_audio.unsqueeze(0), gen_sr)
+            if generated_tokens.shape[1] > 0:
+                gen_audio, gen_sr = tokenizer.reconstruct_audio(generated_tokens)
+                gen_path = os.path.join(debug_dir, "04_generated_segment.wav")
+                torchaudio.save(gen_path, gen_audio.unsqueeze(0), gen_sr)
+            else:
+                logger.info("No generated tokens to save (possible deletion operation)")
 
         with open(os.path.join(debug_dir, "04b_generation_info.txt"), "w") as f:
             f.write(f"Generated tokens shape: {generated_tokens.shape}\n")
-            f.write(
-                f"Generated duration: {generated_tokens.shape[1] / 12.5:.2f} seconds\n"
-            )
+            if generated_tokens.shape[1] > 0:
+                f.write(
+                    f"Generated duration: {generated_tokens.shape[1] / 12.5:.2f} seconds\n"
+                )
+            else:
+                f.write("Generated duration: 0 seconds (deletion operation)\n")
             f.write("Generation parameters:\n")
             f.write(f"  Temperature: {temperature}\n")
             f.write(f"  Top-k: {topk}\n")
@@ -219,7 +264,7 @@ def voice_inpainting_multi(
     debug_dir: str = "data/debug_output",
     temperature: float = 0.7,
     topk: int = 30,
-) -> None:
+) -> Tuple[torch.Tensor, torch.Tensor, int]:
     """Edit a voice message based on multiple edit operations using RVQ tokens
 
     Args:
@@ -231,6 +276,9 @@ def voice_inpainting_multi(
         debug_dir: Directory to save debug files if debug is True
         temperature: Temperature for token generation
         topk: Top-k value for sampling during generation
+
+    Returns:
+        Tuple of (fused_tokens, final_audio, final_sr)
     """
     start_time = time.time()
 
@@ -257,25 +305,89 @@ def voice_inpainting_multi(
             tokenized_audio.sample_rate,
         )
 
+    # Sort edit operations by their start_token_idx to process from left to right
+    edit_operations = sorted(edit_operations, key=lambda op: op["start_token_idx"])
+
     # Process each edit operation sequentially
     current_tokens = tokenized_audio.rvq_tokens
     token_offset = 0  # Track how token indices shift due to previous edits
 
     logger.info(f"Processing {len(edit_operations)} edit operations")
 
-    for i, edit_op in enumerate(edit_operations):
-        # Create an EditOperation object from the dictionary
-        operation = EditOperation(
-            original_text=edit_op["original_text"],
-            edited_text=edit_op["edited_text"],
-            start_token_idx=edit_op["start_token_idx"] + token_offset,
-            end_token_idx=edit_op["end_token_idx"] + token_offset,
+    for i, edit_op_dict in enumerate(edit_operations):
+        # Create an EditOperation object from the dictionary with pre-padding
+        # Pre-padding will be determined automatically
+        basic_op = EditOperation(
+            original_text=edit_op_dict["original_text"],
+            edited_text=edit_op_dict["edited_text"],
+            start_token_idx=edit_op_dict["start_token_idx"] + token_offset,
+            end_token_idx=edit_op_dict["end_token_idx"] + token_offset,
             confidence=1.0,
         )
+
+        # Now we need to find appropriate pre-padding for this operation
+        # Create a temporary TokenizedAudio with current state
+        updated_audio = TokenizedAudio(
+            audio=tokenized_audio.audio,
+            sample_rate=tokenized_audio.sample_rate,
+            rvq_tokens=current_tokens,
+            text=tokenized_audio.text,
+            segments=tokenized_audio.segments,
+            semantic_tokens=tokenized_audio.semantic_tokens,
+            text_to_token_map=tokenized_audio.text_to_token_map,
+            token_to_text_map=tokenized_audio.token_to_text_map,
+            speaker_id=tokenized_audio.speaker_id,
+            word_timestamps=tokenized_audio.word_timestamps,
+        )
+
+        # Use SemanticEditor to find prepadding, but don't load the LLM for manual edits
+        editor = SemanticEditor(tokenizer, load_llm=False)
+
+        # Find the prepadding context
+        start_char_idx = -1
+        for char_idx, token_idx in updated_audio.text_to_token_map.items():
+            if token_idx == basic_op.start_token_idx:
+                start_char_idx = char_idx
+                break
+
+        if start_char_idx >= 0:
+            # Use the dedicated method to find appropriate prepadding
+            prepadding_text, prepadding_start_char_idx = editor.find_prepadding_context(
+                updated_audio.text, start_char_idx
+            )
+
+            if prepadding_text:
+                # Find token indices for prepadding
+                prepadding_start_token_idx = -1
+                for char_idx, token_idx in updated_audio.text_to_token_map.items():
+                    if char_idx >= prepadding_start_char_idx:
+                        prepadding_start_token_idx = token_idx
+                        break
+
+                if prepadding_start_token_idx >= 0:
+                    # Create full operation with prepadding
+                    operation = EditOperation(
+                        original_text=basic_op.original_text,
+                        edited_text=basic_op.edited_text,
+                        start_token_idx=basic_op.start_token_idx,
+                        end_token_idx=basic_op.end_token_idx,
+                        confidence=1.0,
+                        prepadding_text=prepadding_text,
+                        prepadding_start_token_idx=prepadding_start_token_idx,
+                        prepadding_end_token_idx=basic_op.start_token_idx,
+                    )
+                else:
+                    operation = basic_op
+            else:
+                operation = basic_op
+        else:
+            operation = basic_op
 
         logger.info(
             f"Edit operation {i + 1}: '{operation.original_text}' -> '{operation.edited_text}'"
         )
+        if operation.prepadding_text:
+            logger.info(f"  With pre-padding: '{operation.prepadding_text}'")
 
         # Step 3: Generate new tokens for the edit
         logger.info(f"Generating new tokens for edit {i + 1}...")
