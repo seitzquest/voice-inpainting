@@ -330,12 +330,50 @@ async def process_audio_multi(
         file_size = os.path.getsize(input_path)
         logger.info(f"Saved input file to {input_path}, size: {file_size} bytes")
 
+        # First tokenize the audio to get the mapping between semantic and RVQ tokens
+        device = setup_device()
+        tokenizer = AudioTokenizer(device=device)
+        tokenized_audio = tokenizer.tokenize(input_path)
+        
+        # Create a mapping from semantic token index to RVQ token index
+        # In the case of manual editing, the frontend is using indices from the semantic tokens
+        # but we need to translate these to indices in the full RVQ token space
+        semantic_to_rvq_map = {}
+        
+        # Map token_to_text_map keys (semantic token indices) to their positions in RVQ space
+        if hasattr(tokenized_audio, 'token_to_text_map') and tokenized_audio.token_to_text_map:
+            for token_idx, char_pos in tokenized_audio.token_to_text_map.items():
+                semantic_to_rvq_map[token_idx] = token_idx
+        
+        # Update each edit operation with the correct token indices
+        translated_edit_ops = []
+        for op in edit_ops:
+            # Translate start and end token indices using the mapping
+            start_idx = op["start_token_idx"]
+            end_idx = op["end_token_idx"]
+            
+            # If the indices are in the semantic token space, translate them
+            # If not found in the map, keep the original indices
+            translated_start = semantic_to_rvq_map.get(start_idx, start_idx)
+            translated_end = semantic_to_rvq_map.get(end_idx, end_idx)
+            
+            # Create a new operation with translated indices
+            translated_op = {
+                "original_text": op["original_text"],
+                "edited_text": op["edited_text"],
+                "start_token_idx": translated_start,
+                "end_token_idx": translated_end
+            }
+            translated_edit_ops.append(translated_op)
+            
+            logger.info(f"Translated token indices: {start_idx}->{translated_start}, {end_idx}->{translated_end}")
+        
         # Process the audio with the unified voice inpainting function
         start_time = time.time()
         processing_result = voice_inpainting_unified(
             input_file=input_path,
             output_file=output_path,
-            edits=edit_ops,  # List of edit operations
+            edits=translated_edit_ops,  # Use translated operations
             fusion_method=fusion_method,
             debug=True,
             debug_dir=debug_dir,
