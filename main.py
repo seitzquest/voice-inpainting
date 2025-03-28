@@ -11,7 +11,8 @@ from loguru import logger
 import time
 from dotenv import load_dotenv
 
-from src.main import setup_device, voice_inpainting, voice_inpainting_multi
+# Import the unified inpainting function instead of the separate ones
+from src.main import setup_device, voice_inpainting_unified
 from src.tokenization import AudioTokenizer
 
 # Load HF token
@@ -190,8 +191,12 @@ async def process_audio(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     prompt: str = Form(...),
+    fusion_method: Optional[str] = Form("crossfade"),
+    temperature: Optional[float] = Form(0.7),
+    topk: Optional[int] = Form(30),
     return_metadata: Optional[bool] = Form(False),
 ):
+    """Process audio with a single edit prompt"""
     # Log details about the uploaded file
     logger.info(f"Received file: {audio.filename}, Content-Type: {audio.content_type}")
 
@@ -199,6 +204,7 @@ async def process_audio(
     session_id = str(uuid.uuid4())
     input_path = f"data/input/{session_id}.wav"
     output_path = f"data/output/{session_id}.wav"
+    debug_dir = f"data/debug/{session_id}"
 
     logger.info(f"Processing audio with prompt: {prompt}")
 
@@ -220,9 +226,18 @@ async def process_audio(
         file_size = os.path.getsize(input_path)
         logger.info(f"Saved input file to {input_path}, size: {file_size} bytes")
 
-        # Process the audio with the voice inpainting function and measure time
+        # Process the audio with the unified voice inpainting function and measure time
         start_time = time.time()
-        processing_result = voice_inpainting(prompt, input_path, output_path)
+        processing_result = voice_inpainting_unified(
+            input_file=input_path,
+            output_file=output_path,
+            edits=prompt,  # Single edit prompt
+            fusion_method=fusion_method,
+            debug=True,
+            debug_dir=debug_dir,
+            temperature=temperature,
+            topk=topk,
+        )
         processing_time = time.time() - start_time
 
         # Return the processed audio file
@@ -233,6 +248,9 @@ async def process_audio(
 
         # Schedule delayed cleanup of files (30 minutes TTL)
         background_tasks.add_task(delayed_cleanup, [input_path, output_path])
+        # Also schedule cleanup for debug directory, but with longer delay
+        if os.path.exists(debug_dir):
+            background_tasks.add_task(delayed_cleanup, [debug_dir], 3600)  # 1 hour
 
         # Create paths for client to access files
         output_url = f"/api/audio/{session_id}/output.wav"
@@ -271,6 +289,8 @@ async def process_audio_multi(
     audio: UploadFile = File(...),
     edit_operations: str = Form(...),
     fusion_method: Optional[str] = Form("crossfade"),
+    temperature: Optional[float] = Form(0.7),
+    topk: Optional[int] = Form(30),
     return_metadata: Optional[bool] = Form(False),
 ):
     """Process audio with multiple edit operations"""
@@ -281,6 +301,7 @@ async def process_audio_multi(
     session_id = str(uuid.uuid4())
     input_path = f"data/input/{session_id}.wav"
     output_path = f"data/output/{session_id}.wav"
+    debug_dir = f"data/debug/{session_id}"
 
     # Parse edit operations from JSON string
     try:
@@ -309,10 +330,17 @@ async def process_audio_multi(
         file_size = os.path.getsize(input_path)
         logger.info(f"Saved input file to {input_path}, size: {file_size} bytes")
 
-        # Process the audio with the multi-edit voice inpainting function
+        # Process the audio with the unified voice inpainting function
         start_time = time.time()
-        processing_result = voice_inpainting_multi(
-            edit_ops, input_path, output_path, fusion_method=fusion_method
+        processing_result = voice_inpainting_unified(
+            input_file=input_path,
+            output_file=output_path,
+            edits=edit_ops,  # List of edit operations
+            fusion_method=fusion_method,
+            debug=True,
+            debug_dir=debug_dir,
+            temperature=temperature,
+            topk=topk,
         )
         processing_time = time.time() - start_time
 
@@ -324,6 +352,9 @@ async def process_audio_multi(
 
         # Schedule delayed cleanup of files (30 minutes TTL)
         background_tasks.add_task(delayed_cleanup, [input_path, output_path])
+        # Also schedule cleanup for debug directory, but with longer delay
+        if os.path.exists(debug_dir):
+            background_tasks.add_task(delayed_cleanup, [debug_dir], 3600)  # 1 hour
 
         # Create paths for client to access files
         output_url = f"/api/audio/{session_id}/output.wav"

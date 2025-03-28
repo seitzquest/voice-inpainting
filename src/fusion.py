@@ -25,9 +25,9 @@ class FusionConfig:
     """Configuration for token fusion"""
 
     method: FusionMethod = FusionMethod.CONTEXTUAL
-    crossfade_frames: int = 3
-    alpha: float = 0.2  # For linear interpolation
-    decay_factor: float = 0.1  # For exponential decay
+    crossfade_frames: int = 8  # Increased from 3 to 8 for smoother transitions
+    alpha: float = 0.4  # Updated from 0.2 for more balanced interpolation
+    decay_factor: float = 0.2  # Updated from 0.1 for smoother decay
     use_semantic_preservation: bool = True
     transition_codebooks: List[int] = None  # Codebooks to apply transition to
 
@@ -346,7 +346,6 @@ class TokenFusion:
             start_idx: Start index of edit
             end_idx: End index of edit
         """
-        # This implementation is more advanced, using features from both contexts
         # First, insert the generated tokens
         gen_len = generated_tokens.shape[1]
 
@@ -365,7 +364,7 @@ class TokenFusion:
             fused_tokens[:, start_idx : start_idx + gen_len] = generated_tokens
 
         # Define a larger context window for analysis
-        context_size = 2 * self.config.crossfade_frames
+        context_size = max(4, self.config.crossfade_frames * 2)
 
         # Analyze left context (before edit)
         left_start = max(0, start_idx - context_size)
@@ -375,8 +374,8 @@ class TokenFusion:
         right_end = min(original_tokens.shape[1], end_idx + context_size)
         right_context = original_tokens[:, end_idx:right_end]
 
-        # Extract pattern statistics
-        def get_token_stats(tokens):
+        # Extract pattern statistics for each codebook separately
+        def get_codebook_stats(tokens):
             if tokens.shape[1] == 0:
                 return None
             # For each codebook, calculate token distribution
@@ -386,8 +385,8 @@ class TokenFusion:
                 stats[cb] = dict(zip(unique.tolist(), counts.tolist()))
             return stats
 
-        left_stats = get_token_stats(left_context)
-        right_stats = get_token_stats(right_context)
+        left_stats = get_codebook_stats(left_context)
+        right_stats = get_codebook_stats(right_context)
 
         # Apply adaptive transitions based on statistical patterns
         crossfade_frames = self.config.crossfade_frames
@@ -396,29 +395,57 @@ class TokenFusion:
         if not self.config.use_semantic_preservation:
             blend_region = self.config.transition_codebooks
         else:
-            # Skip the first (semantic) codebook
+            # Keep the semantic codebook (0) untouched
             blend_region = [cb for cb in self.config.transition_codebooks if cb > 0]
+
+        # Different handling for different codebook regions
+        voice_codebooks = [
+            cb for cb in range(1, 5) if cb in blend_region
+        ]  # Voice characteristics
+        acoustic_codebooks = [
+            cb for cb in range(5, 32) if cb in blend_region
+        ]  # Acoustic details
 
         # Left transition (beginning of edit)
         if start_idx >= crossfade_frames and left_stats:
-            for cb in blend_region:
+            # Apply stronger preservation for voice codebooks
+            for cb in voice_codebooks:
                 if cb >= fused_tokens.shape[0]:
-                    continue  # Skip invalid codebook indices
+                    continue
 
                 for i in range(crossfade_frames):
-                    # Exponential decay for smoother transition
-                    # This puts more weight on context near the boundary
-                    alpha = (i / crossfade_frames) ** self.config.decay_factor
+                    # Exponential decay for voice characteristics
+                    decay_factor = 0.3  # Gentler decay for voice characteristics
+                    alpha = (i / crossfade_frames) ** decay_factor
                     blend_idx = start_idx - crossfade_frames + i
 
                     if blend_idx >= 0 and blend_idx < fused_tokens.shape[1]:
-                        # With probability (1-alpha), use a token from left context distribution
-                        if torch.rand(1).item() > alpha and cb in left_stats:
-                            # Sample from left context distribution
+                        # Higher probability of using original tokens for voice characteristics
+                        if torch.rand(1).item() > (alpha * 0.7) and cb in left_stats:
                             token_choices = list(left_stats[cb].keys())
                             weights = list(left_stats[cb].values())
                             if token_choices:
-                                # Convert to probabilities
+                                weights = np.array(weights) / sum(weights)
+                                sampled_token = np.random.choice(
+                                    token_choices, p=weights
+                                )
+                                fused_tokens[cb, blend_idx] = sampled_token
+
+            # Apply standard transition for acoustic codebooks
+            for cb in acoustic_codebooks:
+                if cb >= fused_tokens.shape[0]:
+                    continue
+
+                for i in range(crossfade_frames):
+                    # Standard linear decay for acoustic details
+                    alpha = i / crossfade_frames
+                    blend_idx = start_idx - crossfade_frames + i
+
+                    if blend_idx >= 0 and blend_idx < fused_tokens.shape[1]:
+                        if torch.rand(1).item() > alpha and cb in left_stats:
+                            token_choices = list(left_stats[cb].keys())
+                            weights = list(left_stats[cb].values())
+                            if token_choices:
                                 weights = np.array(weights) / sum(weights)
                                 sampled_token = np.random.choice(
                                     token_choices, p=weights
@@ -428,27 +455,80 @@ class TokenFusion:
         # Right transition (end of edit)
         right_start = start_idx + gen_len
         if right_start < fused_tokens.shape[1] and right_stats:
-            for cb in blend_region:
+            # Apply stronger preservation for voice codebooks
+            for cb in voice_codebooks:
                 if cb >= fused_tokens.shape[0]:
-                    continue  # Skip invalid codebook indices
+                    continue
 
                 for i in range(crossfade_frames):
                     if right_start + i >= fused_tokens.shape[1]:
                         continue
 
-                    # Exponential decay for smoother transition
-                    alpha = (
-                        (crossfade_frames - i) / crossfade_frames
-                    ) ** self.config.decay_factor
+                    # Exponential decay for voice characteristics
+                    decay_factor = 0.3  # Gentler decay for voice characteristics
+                    alpha = ((crossfade_frames - i) / crossfade_frames) ** decay_factor
                     blend_idx = right_start + i
 
-                    # With probability (1-alpha), use a token from right context distribution
-                    if torch.rand(1).item() > alpha and cb in right_stats:
-                        # Sample from right context distribution
+                    # Higher probability of using original tokens for voice characteristics
+                    if torch.rand(1).item() > (alpha * 0.7) and cb in right_stats:
                         token_choices = list(right_stats[cb].keys())
                         weights = list(right_stats[cb].values())
                         if token_choices:
-                            # Convert to probabilities
                             weights = np.array(weights) / sum(weights)
                             sampled_token = np.random.choice(token_choices, p=weights)
                             fused_tokens[cb, blend_idx] = sampled_token
+
+            # Apply standard transition for acoustic codebooks
+            for cb in acoustic_codebooks:
+                if cb >= fused_tokens.shape[0]:
+                    continue
+
+                for i in range(crossfade_frames):
+                    if right_start + i >= fused_tokens.shape[1]:
+                        continue
+
+                    # Standard linear decay for acoustic details
+                    alpha = (crossfade_frames - i) / crossfade_frames
+                    blend_idx = right_start + i
+
+                    if torch.rand(1).item() > alpha and cb in right_stats:
+                        token_choices = list(right_stats[cb].keys())
+                        weights = list(right_stats[cb].values())
+                        if token_choices:
+                            weights = np.array(weights) / sum(weights)
+                            sampled_token = np.random.choice(token_choices, p=weights)
+                            fused_tokens[cb, blend_idx] = sampled_token
+
+        # Optional: Apply subtle global voice characteristic preservation
+        # This helps maintain overall voice timbre without introducing artifacts
+        if voice_codebooks:
+            # Global analysis of voice characteristics
+            orig_voice_stats = {}
+            for cb in voice_codebooks:
+                if cb < original_tokens.shape[0]:
+                    unique, counts = torch.unique(
+                        original_tokens[cb], return_counts=True
+                    )
+                    orig_voice_stats[cb] = dict(zip(unique.tolist(), counts.tolist()))
+
+            # Apply very subtle adjustments to maintain voice characteristics
+            # Only modify a small percentage of tokens to avoid artifacts
+            adjustment_prob = 0.1  # Only adjust 10% of tokens
+
+            for cb in voice_codebooks:
+                if cb in orig_voice_stats:
+                    for i in range(gen_len):
+                        token_idx = start_idx + i
+                        if (
+                            token_idx < fused_tokens.shape[1]
+                            and torch.rand(1).item() < adjustment_prob
+                        ):
+                            # Sample from original voice distribution
+                            token_choices = list(orig_voice_stats[cb].keys())
+                            weights = list(orig_voice_stats[cb].values())
+                            if token_choices and sum(weights) > 0:
+                                weights = np.array(weights) / sum(weights)
+                                sampled_token = np.random.choice(
+                                    token_choices, p=weights
+                                )
+                                fused_tokens[cb, token_idx] = sampled_token
