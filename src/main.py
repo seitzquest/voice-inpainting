@@ -1,5 +1,6 @@
 """
-Main pipeline for voice inpainting with RVQ tokens
+Improved main pipeline for voice inpainting with RVQ tokens
+Uses integrated approach for more seamless inpainting with correctly identified padding
 """
 
 from typing import Dict, List, Tuple, Union
@@ -11,10 +12,9 @@ import argparse
 import platform
 from loguru import logger
 
-from src.tokenization import AudioTokenizer, TokenizedAudio
+from src.tokenization import AudioTokenizer
 from src.semantic_edit import EditOperation, SemanticEditor
-from src.generation import TokenGenerator
-from src.fusion import TokenFusion, FusionConfig, FusionMethod
+from src.integrated_inpainting import IntegratedVoiceInpainting
 
 
 def setup_device() -> str:
@@ -42,31 +42,29 @@ def setup_device() -> str:
     return device
 
 
-def voice_inpainting_unified(
+def voice_inpainting(
     input_file: str,
     output_file: str,
     edits: Union[str, List[Dict]],
-    fusion_method: str = "crossfade",
     debug: bool = True,
     debug_dir: str = "data/debug_output",
     temperature: float = 0.7,
-    topk: int = 30,
+    topk: int = 25,
 ) -> Tuple[torch.Tensor, torch.Tensor, int]:
-    """Unified function for voice inpainting with single or multiple edits
+    """Improved function for voice inpainting with integrated generation
 
     Args:
         input_file: Path to the input voice message audio file
         output_file: Path to store the output audio
         edits: Either a single edit prompt (str) or a list of edit operations (List[Dict])
                Each dict should have 'original_text', 'edited_text', 'start_token_idx', 'end_token_idx'
-        fusion_method: Method for token fusion
         debug: Whether to save intermediate files for debugging
         debug_dir: Directory to save debug files if debug is True
         temperature: Temperature for token generation
         topk: Top-k value for sampling during generation
 
     Returns:
-        Tuple of (fused_tokens, final_audio, final_sr)
+        Tuple of (inpainted_tokens, final_audio, final_sr)
     """
     start_time = time.time()
 
@@ -117,9 +115,9 @@ def voice_inpainting_unified(
                     f"Token range: {edit_op.start_token_idx} to {edit_op.end_token_idx}\n"
                 )
                 if edit_op.prepadding_text:
-                    f.write(f"Pre-padding: '{edit_op.prepadding_text}'\n")
+                    f.write(f"Pre-padding (before edit): '{edit_op.prepadding_text}'\n")
                 if edit_op.postpadding_text:
-                    f.write(f"Post-padding: '{edit_op.postpadding_text}'\n")
+                    f.write(f"Post-padding (after edit): '{edit_op.postpadding_text}'\n")
     else:
         # Multiple edit operations provided as dictionaries
         logger.info(f"Processing {len(edits)} edit operations")
@@ -142,26 +140,62 @@ def voice_inpainting_unified(
                 confidence=1.0,
             )
 
-            # Find appropriate pre-padding context (text before the edit)
+            # Find the position of this edit in the original text
+            original_start_pos = tokenized_audio.text.find(basic_op.original_text)
+            if original_start_pos == -1:
+                # If exact match not found, try a more flexible approach
+                logger.warning(f"Could not find exact match for '{basic_op.original_text}' in text, using approximation")
+                # Calculate approximate position based on token indices
+                if basic_op.start_token_idx in tokenized_audio.token_to_text_map:
+                    original_start_pos = tokenized_audio.token_to_text_map[basic_op.start_token_idx]
+                else:
+                    # Fallback: find nearest token position
+                    nearest_token = min(
+                        tokenized_audio.token_to_text_map.keys(),
+                        key=lambda x: abs(x - basic_op.start_token_idx)
+                    )
+                    original_start_pos = tokenized_audio.token_to_text_map[nearest_token]
+            
+            original_end_pos = original_start_pos + len(basic_op.original_text)
+
+            # Find appropriate pre-padding context (text BEFORE the edit)
             prepadding_text, prepadding_start_char_idx = editor.find_prepadding_context(
-                tokenized_audio.text, tokenized_audio.text.find(basic_op.original_text)
+                tokenized_audio.text, original_start_pos
+            )
+
+            # Find appropriate post-padding context (text AFTER the edit)
+            postpadding_text, postpadding_end_char_idx = editor.find_postpadding_context(
+                tokenized_audio.text, original_end_pos
             )
 
             # Map prepadding to token indices
             prepadding_start_token_idx = -1
+            prepadding_end_token_idx = -1
             if prepadding_text:
-                text_pos = tokenized_audio.text.find(prepadding_text)
-                if text_pos >= 0:
-                    # Find the nearest token index to this text position
-                    char_positions = sorted(tokenized_audio.text_to_token_map.keys())
-                    nearest_pos = min(
-                        char_positions, key=lambda pos: abs(pos - text_pos)
-                    )
-                    prepadding_start_token_idx = tokenized_audio.text_to_token_map[
-                        nearest_pos
-                    ]
+                # Find the nearest token index to the pre-padding text start position
+                char_positions = sorted(tokenized_audio.text_to_token_map.keys())
+                nearest_pos = min(
+                    char_positions, key=lambda pos: abs(pos - prepadding_start_char_idx)
+                )
+                prepadding_start_token_idx = tokenized_audio.text_to_token_map[
+                    nearest_pos
+                ]
+                prepadding_end_token_idx = basic_op.start_token_idx
 
-            # Create complete EditOperation with pre-padding
+            # Map postpadding to token indices
+            postpadding_start_token_idx = basic_op.end_token_idx
+            postpadding_end_token_idx = -1
+            if postpadding_text:
+                # Find the nearest token index to the post-padding text end position
+                char_positions = sorted(tokenized_audio.text_to_token_map.keys())
+                nearest_pos = min(
+                    char_positions, key=lambda pos: abs(pos - postpadding_end_char_idx)
+                )
+                postpadding_end_token_idx = tokenized_audio.text_to_token_map[
+                    nearest_pos
+                ]
+
+            # Create complete EditOperation with pre-padding and post-padding
             operation = EditOperation(
                 original_text=basic_op.original_text,
                 edited_text=basic_op.edited_text,
@@ -170,7 +204,10 @@ def voice_inpainting_unified(
                 confidence=1.0,
                 prepadding_text=prepadding_text,
                 prepadding_start_token_idx=prepadding_start_token_idx,
-                prepadding_end_token_idx=basic_op.start_token_idx,
+                prepadding_end_token_idx=prepadding_end_token_idx,
+                postpadding_text=postpadding_text,
+                postpadding_start_token_idx=postpadding_start_token_idx,
+                postpadding_end_token_idx=postpadding_end_token_idx
             )
 
             edit_operations.append(operation)
@@ -184,99 +221,36 @@ def voice_inpainting_unified(
                         f"Token range: {operation.start_token_idx} to {operation.end_token_idx}\n"
                     )
                     if operation.prepadding_text:
-                        f.write(f"Pre-padding: '{operation.prepadding_text}'\n")
+                        f.write(f"Pre-padding (before edit): '{operation.prepadding_text}'\n")
+                    if operation.postpadding_text:
+                        f.write(f"Post-padding (after edit): '{operation.postpadding_text}'\n")
 
-    # Step 3: Process each edit operation sequentially
-    current_tokens = tokenized_audio.rvq_tokens
-    token_offset = 0  # Track how token indices shift due to previous edits
+    # Step 3: Perform integrated inpainting
+    logger.info("Performing integrated voice inpainting...")
+    inpainting = IntegratedVoiceInpainting(device=device)
 
-    generator = TokenGenerator(device=device)
-
-    for i, edit_op in enumerate(edit_operations):
-        logger.info(
-            f"Processing edit {i + 1}/{len(edit_operations)}: '{edit_op.original_text}' -> '{edit_op.edited_text}'"
-        )
-
-        # Adjust token indices based on previous edits
-        if token_offset != 0:
-            edit_op.start_token_idx += token_offset
-            edit_op.end_token_idx += token_offset
-            if edit_op.prepadding_start_token_idx >= 0:
-                edit_op.prepadding_start_token_idx += token_offset
-            if edit_op.prepadding_end_token_idx >= 0:
-                edit_op.prepadding_end_token_idx = (
-                    edit_op.start_token_idx
-                )  # Always ends at start
-
-        # Create an updated TokenizedAudio object with the current tokens
-        updated_audio = TokenizedAudio(
-            audio=tokenized_audio.audio,
-            sample_rate=tokenized_audio.sample_rate,
-            rvq_tokens=current_tokens,
-            text=tokenized_audio.text,
-            segments=tokenized_audio.segments,
-            semantic_tokens=tokenized_audio.semantic_tokens,
-            text_to_token_map=tokenized_audio.text_to_token_map,
-            token_to_text_map=tokenized_audio.token_to_text_map,
-            speaker_id=tokenized_audio.speaker_id,
-            word_timestamps=tokenized_audio.word_timestamps,
-        )
-
-        # Generate new tokens for the edit
-        with torch.inference_mode():
-            generated_tokens = generator.generate_replacement_tokens(
-                updated_audio, edit_op, temperature=temperature, topk=topk
+    with torch.inference_mode():
+        if len(edit_operations) == 1:
+            # Process single edit
+            inpainted_tokens, final_audio, final_sr = inpainting.inpaint(
+                tokenized_audio, 
+                edit_operations[0],
+                temperature=temperature,
+                topk=topk
+            )
+        else:
+            # Process multiple edits
+            inpainted_tokens, final_audio, final_sr = inpainting.batch_inpaint(
+                tokenized_audio,
+                edit_operations,
+                temperature=temperature,
+                topk=topk
             )
 
         if debug:
-            # Save this generation
-            with torch.inference_mode():
-                if generated_tokens.shape[1] > 0:
-                    gen_audio, gen_sr = tokenizer.reconstruct_audio(generated_tokens)
-                    gen_path = os.path.join(
-                        debug_dir, f"04_generated_segment_{i + 1}.wav"
-                    )
-                    torchaudio.save(gen_path, gen_audio.unsqueeze(0), gen_sr)
-
-        # Fuse tokens
-        logger.info(f"Fusing tokens for edit {i + 1} using {fusion_method} method...")
-        fusion_config = FusionConfig(
-            method=FusionMethod(fusion_method),
-        )
-
-        fusion = TokenFusion(config=fusion_config)
-
-        with torch.inference_mode():
-            fused_tokens = fusion.fuse_tokens(
-                current_tokens,
-                generated_tokens,
-                (edit_op.start_token_idx, edit_op.end_token_idx),
-            )
-
-            # Update current tokens for next iteration
-            current_tokens = fused_tokens
-
-            # Update token offset based on length difference
-            old_length = edit_op.end_token_idx - edit_op.start_token_idx
-            new_length = generated_tokens.shape[1]
-            token_offset += new_length - old_length
-
-            if debug:
-                # Save intermediate result for this edit
-                intermediate_audio, intermediate_sr = tokenizer.reconstruct_audio(
-                    fused_tokens
-                )
-                intermediate_path = os.path.join(
-                    debug_dir, f"05_intermediate_result_{i + 1}.wav"
-                )
-                torchaudio.save(
-                    intermediate_path, intermediate_audio.unsqueeze(0), intermediate_sr
-                )
-
-    # Step 4: Reconstruct final audio from fused tokens
-    logger.info("Reconstructing audio from final fused tokens...")
-    with torch.inference_mode():
-        final_audio, final_sr = tokenizer.reconstruct_audio(current_tokens)
+            # Save the intermediate result
+            debug_output = os.path.join(debug_dir, "04_inpainted_result.wav")
+            torchaudio.save(debug_output, final_audio.unsqueeze(0), final_sr)
 
     # Save the result
     out_dir = os.path.dirname(output_file)
@@ -286,16 +260,11 @@ def voice_inpainting_unified(
     logger.info(f"Saving final audio to {output_file}")
     torchaudio.save(output_file, final_audio.unsqueeze(0), final_sr)
 
-    if debug:
-        # Also save a debug copy
-        debug_output = os.path.join(debug_dir, "06_final_result.wav")
-        torchaudio.save(debug_output, final_audio.unsqueeze(0), final_sr)
-
     elapsed_time = time.time() - start_time
     logger.info(
         f"Voice inpainting completed successfully in {elapsed_time:.2f} seconds"
     )
-    return current_tokens, final_audio, final_sr
+    return inpainted_tokens, final_audio, final_sr
 
 
 def main():
@@ -305,17 +274,10 @@ def main():
     parser.add_argument("--output", "-o", required=True, help="Output audio file")
     parser.add_argument("--prompt", "-p", required=True, help="Edit prompt")
     parser.add_argument(
-        "--fusion",
-        "-f",
-        default="crossfade",
-        choices=["direct", "linear", "crossfade", "contextual"],
-        help="Fusion method",
-    )
-    parser.add_argument(
         "--temperature", "-t", type=float, default=0.7, help="Generation temperature"
     )
     parser.add_argument(
-        "--topk", "-k", type=int, default=30, help="Top-k for token sampling"
+        "--topk", "-k", type=int, default=25, help="Top-k for token sampling"
     )
     parser.add_argument("--debug", "-d", action="store_true", help="Enable debug mode")
     parser.add_argument(
@@ -329,11 +291,10 @@ def main():
     logger.add(lambda msg: print(msg, flush=True), level="INFO")
     logger.add("voice_inpainting.log", rotation="10 MB", level="DEBUG")
 
-    voice_inpainting_unified(
+    voice_inpainting(
         input_file=args.input,
         output_file=args.output,
         edits=args.prompt,  # Use the prompt as a single edit
-        fusion_method=args.fusion,
         debug=args.debug,
         debug_dir=args.debug_dir,
         temperature=args.temperature,

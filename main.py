@@ -11,8 +11,7 @@ from loguru import logger
 import time
 from dotenv import load_dotenv
 
-# Import the unified inpainting function instead of the separate ones
-from src.main import setup_device, voice_inpainting_unified
+from src.main import setup_device, voice_inpainting
 from src.tokenization import AudioTokenizer
 
 # Load HF token
@@ -110,14 +109,12 @@ async def tokenize_audio(
                     tokens_metadata.append(
                         {
                             "token_idx": i,
-                            "text": word_info["text"],  # Changed from "word" to "text"
+                            "text": word_info["text"],
                             "start_time": word_info["start"],
                             "end_time": word_info["end"],
-                            "confidence": word_info.get(
-                                "confidence", 1.0
-                            ),  # Added confidence
+                            "confidence": word_info.get("confidence", 1.0),
                             "llama_token": tokenized_audio.llama_tokens[i]
-                            if i < len(tokenized_audio.llama_tokens)
+                            if i < len(tokenized_audio.llama_tokens or [])
                             else None,
                         }
                     )
@@ -127,14 +124,14 @@ async def tokenize_audio(
             char_to_word = {}
             if tokenized_audio.word_timestamps:
                 for word_info in tokenized_audio.word_timestamps:
-                    word = word_info["text"]  # Changed from "word" to "text"
+                    word = word_info["text"]
                     word_start = tokenized_audio.text.find(word)
                     if word_start >= 0:
                         for i in range(word_start, word_start + len(word)):
                             char_to_word[i] = word_info
 
             # Map tokens to text positions and extract metadata
-            for i in range(len(tokenized_audio.semantic_tokens)):
+            for i in range(len(tokenized_audio.semantic_tokens or [])):
                 # Check if this token index maps to a text position
                 if i in tokenized_audio.token_to_text_map:
                     char_idx = tokenized_audio.token_to_text_map[i]
@@ -146,14 +143,10 @@ async def tokenize_audio(
                         tokens_metadata.append(
                             {
                                 "token_idx": i,
-                                "text": word_info[
-                                    "text"
-                                ],  # Changed from "word" to "text"
+                                "text": word_info["text"],
                                 "start_time": word_info["start"],
                                 "end_time": word_info["end"],
-                                "confidence": word_info.get(
-                                    "confidence", 1.0
-                                ),  # Added confidence
+                                "confidence": word_info.get("confidence", 1.0),
                             }
                         )
 
@@ -168,6 +161,7 @@ async def tokenize_audio(
                 "text": tokenized_audio.text,
                 "tokens": tokens_metadata,
                 "llama_tokens": tokenized_audio.llama_tokens,
+                "semantic_to_rvq_map": tokenized_audio.semantic_to_rvq_map,
             }
         else:
             response_data = {
@@ -175,6 +169,7 @@ async def tokenize_audio(
                 "session_id": session_id,
                 "text": tokenized_audio.text,
                 "tokens": tokens_metadata,
+                "semantic_to_rvq_map": tokenized_audio.semantic_to_rvq_map,
             }
 
         return response_data
@@ -191,14 +186,16 @@ async def process_audio(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     prompt: str = Form(...),
-    fusion_method: Optional[str] = Form("crossfade"),
+    fusion_method: Optional[str] = Form("crossfade"),  # Kept for API compatibility but not used
     temperature: Optional[float] = Form(0.7),
-    topk: Optional[int] = Form(30),
+    topk: Optional[int] = Form(25),
     return_metadata: Optional[bool] = Form(False),
 ):
     """Process audio with a single edit prompt"""
     # Log details about the uploaded file
     logger.info(f"Received file: {audio.filename}, Content-Type: {audio.content_type}")
+    if fusion_method != "crossfade":
+        logger.info(f"Note: fusion_method={fusion_method} specified but not used in the integrated approach")
 
     # Generate unique IDs for the input and output files
     session_id = str(uuid.uuid4())
@@ -226,13 +223,12 @@ async def process_audio(
         file_size = os.path.getsize(input_path)
         logger.info(f"Saved input file to {input_path}, size: {file_size} bytes")
 
-        # Process the audio with the unified voice inpainting function and measure time
+        # Process the audio with the improved voice inpainting function and measure time
         start_time = time.time()
-        processing_result = voice_inpainting_unified(
+        processing_result = voice_inpainting(
             input_file=input_path,
             output_file=output_path,
             edits=prompt,  # Single edit prompt
-            fusion_method=fusion_method,
             debug=True,
             debug_dir=debug_dir,
             temperature=temperature,
@@ -288,14 +284,16 @@ async def process_audio_multi(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     edit_operations: str = Form(...),
-    fusion_method: Optional[str] = Form("crossfade"),
+    fusion_method: Optional[str] = Form("crossfade"),  # Kept for API compatibility but not used
     temperature: Optional[float] = Form(0.7),
-    topk: Optional[int] = Form(30),
+    topk: Optional[int] = Form(25),
     return_metadata: Optional[bool] = Form(False),
 ):
     """Process audio with multiple edit operations"""
     # Log details about the uploaded file
     logger.info(f"Received file: {audio.filename}, Content-Type: {audio.content_type}")
+    if fusion_method != "crossfade":
+        logger.info(f"Note: fusion_method={fusion_method} specified but not used in the integrated approach")
 
     # Generate unique IDs for the input and output files
     session_id = str(uuid.uuid4())
@@ -359,9 +357,30 @@ async def process_audio_multi(
             translated_start = semantic_to_rvq_map.get(start_idx, start_idx)
             translated_end = semantic_to_rvq_map.get(end_idx, end_idx)
             
+            # Ensure original_text includes all necessary spaces
+            original_text = edit_dict["original_text"]
+            
+            # Handle whitespace preservation in the original text
+            # (This helps with the frontend issue)
+            if i > 0 and i < len(sorted_edits) - 1:
+                prev_edit = sorted_edits[i-1]
+                next_edit = sorted_edits[i+1]
+                
+                # Check if we need to add space before this edit
+                if (not prev_edit["original_text"].endswith(' ') and 
+                    not original_text.startswith(' ') and
+                    not prev_edit["original_text"].endswith(('.', ',', '!', '?', ';', ':'))):
+                    original_text = ' ' + original_text
+                    
+                # Check if we need to add space after this edit
+                if (not original_text.endswith(' ') and 
+                    not next_edit["original_text"].startswith(' ') and
+                    not original_text.endswith(('.', ',', '!', '?', ';', ':'))):
+                    original_text = original_text + ' '
+            
             # Create a new operation with translated indices
             translated_op = {
-                "original_text": edit_dict["original_text"],
+                "original_text": original_text,
                 "edited_text": edit_dict["edited_text"],
                 "start_token_idx": translated_start,
                 "end_token_idx": translated_end
@@ -370,13 +389,12 @@ async def process_audio_multi(
             
             logger.info(f"Translated token indices: {start_idx}->{translated_start}, {end_idx}->{translated_end}")
         
-        # Process the audio with the unified voice inpainting function
+        # Process the audio with the new integrated voice inpainting function
         start_time = time.time()
-        processing_result = voice_inpainting_unified(
+        processing_result = voice_inpainting(
             input_file=input_path,
             output_file=output_path,
             edits=translated_edit_ops,  # Use translated operations
-            fusion_method=fusion_method,
             debug=True,
             debug_dir=debug_dir,
             temperature=temperature,

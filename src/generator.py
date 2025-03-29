@@ -8,7 +8,6 @@ from src.watermarking import CSM_1B_GH_WATERMARK, load_watermarker, watermark
 from tokenizers.processors import TemplateProcessing
 from transformers import AutoTokenizer
 
-# Import MimiTokenizer from mimi_tokenizer.py
 from src.mimi_tokenizer import MimiTokenizer
 
 
@@ -122,7 +121,7 @@ class Generator:
         context: List[Segment],
         max_audio_length_ms: float = 90_000,
         temperature: float = 0.9,
-        topk: int = 50,
+        topk: int = 20,
         max_seq_len: int = 2048,
     ) -> torch.Tensor:
         self._model.reset_caches()

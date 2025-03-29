@@ -17,9 +17,8 @@ from src.tokenization import AudioTokenizer, TokenizedAudio
 class EditOperation:
     """Represents an edit operation
 
-    Note: While both pre-padding and post-padding context are maintained for
-    compatibility, the improved voice inpainting primarily uses pre-padding context.
-    Post-padding is now less important for generation quality.
+    Note: Pre-padding is text BEFORE the edit, post-padding is text AFTER the edit.
+    Both are important for generating natural-sounding speech.
     """
 
     original_text: str
@@ -29,12 +28,11 @@ class EditOperation:
     confidence: float = 1.0
 
     # Pre-padding context (text before the edit that provides context but isn't replaced)
-    # This is the primary context used for improved voice generation
     prepadding_text: str = ""
     prepadding_start_token_idx: int = -1
     prepadding_end_token_idx: int = -1
 
-    # Post-padding context (maintained for compatibility but less important now)
+    # Post-padding context (text after the edit that provides context for what follows)
     postpadding_text: str = ""
     postpadding_start_token_idx: int = -1
     postpadding_end_token_idx: int = -1
@@ -88,9 +86,6 @@ class SemanticEditor:
     ) -> EditOperation:
         """Find the token range to edit based on the prompt
 
-        This method now prioritizes pre-padding context for improved voice generation.
-        Post-padding context is still identified but is less important for generation quality.
-
         Args:
             tokenized_audio: TokenizedAudio object
             edit_prompt: Description of the edit to make
@@ -122,8 +117,7 @@ class SemanticEditor:
             tokenized_audio, (start_char_idx, end_char_idx)
         )
 
-        # Focus primarily on finding appropriate pre-padding context (text before the edit)
-        # This is the most important context for improved voice generation
+        # Find appropriate pre-padding context (text BEFORE the edit)
         prepadding_text, prepadding_start_char_idx = self.find_prepadding_context(
             text, start_char_idx
         )
@@ -140,11 +134,11 @@ class SemanticEditor:
             prepadding_end_token_idx = start_token_idx
 
             logger.info(
-                f"Pre-padding context: '{prepadding_text}' "
+                f"Pre-padding context (before edit): '{prepadding_text}' "
                 f"(tokens {prepadding_start_token_idx} to {prepadding_end_token_idx})"
             )
 
-        # For compatibility, still identify post-padding context but note it's less important now
+        # Find appropriate post-padding context (text AFTER the edit)
         postpadding_text, postpadding_end_char_idx = self.find_postpadding_context(
             text, end_char_idx
         )
@@ -161,7 +155,7 @@ class SemanticEditor:
             postpadding_start_token_idx = end_token_idx
 
             logger.info(
-                f"Post-padding context (less important now): '{postpadding_text}' "
+                f"Post-padding context (after edit): '{postpadding_text}' "
                 f"(tokens {postpadding_start_token_idx} to {postpadding_end_token_idx})"
             )
 
@@ -178,7 +172,7 @@ class SemanticEditor:
                 f"Edit is a deletion of tokens {start_token_idx} to {end_token_idx}"
             )
 
-        # Create the EditOperation with a focus on pre-padding context
+        # Create the EditOperation with proper pre-padding and post-padding
         return EditOperation(
             original_text=subseq_original,
             edited_text=subseq_edited,
@@ -262,11 +256,8 @@ class SemanticEditor:
     def find_prepadding_context(
         self, text: str, edit_start_char_idx: int
     ) -> Tuple[str, int]:
-        """Find appropriate pre-padding context before the edit position.
+        """Find appropriate pre-padding context BEFORE the edit position.
         Attempts to get a complete sentence or phrase that ends at the edit position.
-        This method is public so it can be called directly for manual edit operations.
-
-        This is the primary context used for improved voice generation.
 
         Args:
             text: Full transcript text
@@ -275,7 +266,7 @@ class SemanticEditor:
         Returns:
             Tuple of (prepadding_text, prepadding_start_char_idx)
         """
-        # Get text before the edit point
+        # Get text BEFORE the edit point (not after)
         text_before = text[:edit_start_char_idx].strip()
 
         if not text_before:
@@ -314,12 +305,12 @@ class SemanticEditor:
         else:
             # No sentence boundary found, use the last few words for context
             words = text_before.split()
-            if len(words) <= 3:
-                # Use all words if there are 3 or fewer
+            if len(words) <= 5:
+                # Use all words if there are 5 or fewer
                 return text_before, edit_start_char_idx - len(text_before)
             else:
-                # Use the last 3 words as context
-                context_words = words[-3:]
+                # Use the last 5 words as context
+                context_words = words[-5:]
 
                 # Find where these words start in the original text
                 context_start_idx = text_before.rfind(" " + context_words[0] + " ")
@@ -328,7 +319,7 @@ class SemanticEditor:
                     context_start_idx = text_before.rfind(context_words[0])
                     if context_start_idx == -1:
                         # If still not found, just use a fixed character count
-                        return text_before[-30:], max(0, edit_start_char_idx - 30)
+                        return text_before[-40:], max(0, edit_start_char_idx - 40)
 
                 # Add 1 to skip the leading space if found with space
                 if text_before[context_start_idx] == " ":
@@ -343,12 +334,8 @@ class SemanticEditor:
     def find_postpadding_context(
         self, text: str, edit_end_char_idx: int
     ) -> Tuple[str, int]:
-        """Find appropriate post-padding context after the edit position.
+        """Find appropriate post-padding context AFTER the edit position.
         Attempts to get a complete sentence or phrase that starts at the edit position.
-        This method is public so it can be called directly for manual edit operations.
-
-        Note: Post-padding is kept for compatibility but is less important now,
-        as the improved voice inpainting primarily relies on pre-padding context.
 
         Args:
             text: Full transcript text
@@ -357,7 +344,7 @@ class SemanticEditor:
         Returns:
             Tuple of (postpadding_text, postpadding_end_char_idx)
         """
-        # Get text after the edit point
+        # Get text AFTER the edit point (not before)
         text_after = text[edit_end_char_idx:].strip()
 
         if not text_after:
@@ -367,7 +354,7 @@ class SemanticEditor:
         # Define patterns for sentence boundaries (periods, question marks, exclamation points)
         sentence_boundaries = [". ", "? ", "! ", "\n"]
 
-        # Find the first sentence boundary
+        # Find the first sentence boundary after the edit
         first_boundary_idx = len(text_after)
         for boundary in sentence_boundaries:
             idx = text_after.find(boundary)
@@ -393,12 +380,12 @@ class SemanticEditor:
         else:
             # No sentence boundary found, use the first few words for context
             words = text_after.split()
-            if len(words) <= 3:
-                # Use all words if there are 3 or fewer
-                return text_after, len(text)
+            if len(words) <= 5:
+                # Use all words if there are 5 or fewer
+                return text_after, edit_end_char_idx + len(text_after)
             else:
-                # Use the first 3 words as context
-                context_words = words[:3]
+                # Use the first 5 words as context
+                context_words = words[:5]
                 context_end_idx = 0
                 for word in context_words:
                     context_end_idx = text_after.find(word, context_end_idx) + len(word)
@@ -407,9 +394,6 @@ class SemanticEditor:
                 actual_end_idx = edit_end_char_idx + context_end_idx
 
                 return " ".join(context_words), actual_end_idx
-
-    # Private alias for backward compatibility
-    _find_prepadding_context = find_prepadding_context
 
     def _fuzzy_find_substring(self, text: str, substring: str) -> Tuple[int, int]:
         """Find the best match for a substring using fuzzy matching
