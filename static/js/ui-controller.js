@@ -572,7 +572,7 @@ class UIController {
         this.audioElements.processedAudio.src = URL.createObjectURL(processedBlob);
         
         // Update text fields
-        this.textElements.editPromptDisplay.textContent = `Edit prompt: "${prompt}"`;
+        this.textElements.editPromptDisplay.textContent = `Edit: ${prompt}`;
         
         if (metadata.processing_time) {
             this.textElements.processingDetails.textContent = 
@@ -612,7 +612,7 @@ class UIController {
             
             // Create summary of edits for display
             const editSummary = editOperations.map(op => 
-                `"${op.original_text}" → "${op.edited_text}"`
+                `${op.original_text} → ${op.edited_text}`
             ).join(', ');
             
             // Update UI with results

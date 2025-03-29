@@ -878,7 +878,125 @@ class TokenTextEditor {
     }
     
     /**
+     * Build original text from transcript text, preserving exact spacing
+     * @param {Array} tokenData - Array of token data {tokenIdx, text, etc.}
+     * @param {string} transcript - Full transcript text
+     * @returns {string} - Original text extracted from transcript
+     */
+    buildOriginalTextFromTranscript(tokenData, transcript) {
+        if (!tokenData || tokenData.length === 0 || !transcript) {
+            return '';
+        }
+        
+        // Get the start and end times from tokens
+        const startTime = Math.min(...tokenData.map(t => {
+            const token = this.tokens.find(tk => tk.token_idx === t);
+            return token ? token.start_time : Infinity;
+        }));
+        
+        const endTime = Math.max(...tokenData.map(t => {
+            const token = this.tokens.find(tk => tk.token_idx === t);
+            return token ? token.end_time : 0;
+        }));
+        
+        // Look for the corresponding tokens in the original token list
+        const relevantTokens = this.tokens.filter(t => 
+            t.start_time >= startTime && t.end_time <= endTime
+        );
+        
+        // If we found tokens in the right time range
+        if (relevantTokens.length > 0) {
+            // Find the text positions of the first and last token
+            let firstPosition = -1;
+            let lastPosition = -1;
+            
+            for (const token of relevantTokens) {
+                const positions = this.findTokenPositions(transcript, token.text);
+                
+                for (const pos of positions) {
+                    if (firstPosition === -1 || pos.start < firstPosition) {
+                        firstPosition = pos.start;
+                    }
+                    
+                    if (lastPosition === -1 || pos.end > lastPosition) {
+                        lastPosition = pos.end;
+                    }
+                }
+            }
+            
+            // If we found valid positions
+            if (firstPosition !== -1 && lastPosition !== -1) {
+                // Extract the exact substring from the transcript
+                return transcript.substring(firstPosition, lastPosition);
+            }
+        }
+        
+        // Fallback to token concatenation preserving spaces
+        let originalText = '';
+        let prevTokenEnd = -1;
+        
+        // Sort token data by time to ensure correct order
+        const timeOrderedTokens = [...tokenData].sort((a, b) => {
+            const tokenA = this.tokens.find(t => t.token_idx === a);
+            const tokenB = this.tokens.find(t => t.token_idx === b);
+            return tokenA && tokenB ? tokenA.start_time - tokenB.start_time : 0;
+        });
+        
+        for (const tokenIdx of timeOrderedTokens) {
+            const token = this.tokens.find(t => t.token_idx === tokenIdx);
+            if (!token) continue;
+            
+            const tokenText = token.text;
+            
+            // Check if we need to add space between tokens
+            if (prevTokenEnd !== -1) {
+                // Find both tokens in the transcript and check if there's space between them
+                const positions = this.findTokenPositions(transcript, tokenText);
+                
+                if (positions.length > 0) {
+                    // Try to find a position that comes after the previous token
+                    const validPositions = positions.filter(pos => pos.start > prevTokenEnd);
+                    
+                    if (validPositions.length > 0) {
+                        // Get the first valid position
+                        const pos = validPositions[0];
+                        
+                        // Check if there are spaces between the previous token and this one
+                        const gap = transcript.substring(prevTokenEnd, pos.start);
+                        originalText += gap; // This preserves exact spacing
+                        prevTokenEnd = pos.end;
+                        originalText += tokenText;
+                        continue;
+                    }
+                }
+                
+                // If we can't find the exact position, add a space if needed
+                if (!originalText.endsWith(' ') && !tokenText.startsWith(' ') &&
+                    !originalText.endsWith('.') && !originalText.endsWith(',') &&
+                    !originalText.endsWith('!') && !originalText.endsWith('?')) {
+                    originalText += ' ';
+                }
+            }
+            
+            originalText += tokenText;
+            
+            // Update prevTokenEnd using the token's position in the transcript
+            const positions = this.findTokenPositions(transcript, tokenText);
+            if (positions.length > 0) {
+                // Use the first occurrence for simplicity
+                prevTokenEnd = positions[0].end;
+            } else {
+                // If position not found, just update based on current string length
+                prevTokenEnd = originalText.length;
+            }
+        }
+        
+        return originalText;
+    }
+    
+    /**
      * Get modifications as edit operations for the API
+     * IMPROVED: Uses buildOriginalTextFromTranscript for more accurate text extraction
      * @returns {Array} - Array of edit operations
      */
     getEditOperations() {
@@ -917,16 +1035,17 @@ class TokenTextEditor {
             
             if (tokenData.length === 0) continue;
             
-            // Build original text
-            let originalText = '';
-            for (const data of tokenData) {
-                originalText += data.originalText;
-            }
+            // Build original text using the transcript-based method
+            // This preserves exact spacing from the original transcript
+            const originalText = this.buildOriginalTextFromTranscript(
+                tokenIndices, 
+                this.originalText
+            );
             
             // Find what text has replaced these tokens
             const editedText = this.inferEditedTextForTokens(tokenIndices, currentText);
             
-            // Create edit operation
+            // Create edit operation with accurate original text (preserving spaces)
             editOperations.push({
                 original_text: originalText,
                 edited_text: editedText,
@@ -940,6 +1059,7 @@ class TokenTextEditor {
     
     /**
      * Infer what text has replaced a group of modified tokens
+     * Improved to better handle spaces in edited text
      * @param {Array} modifiedTokenIndices - Array of modified token indices
      * @param {string} currentText - Current text
      * @returns {string} - The text that likely replaced these tokens
@@ -994,11 +1114,33 @@ class TokenTextEditor {
             const maxLength = 100; // Reasonable maximum replacement length
             const endPos = Math.min(beforeAnchor.end + maxLength, currentText.length);
             editedText = currentText.substring(beforeAnchor.end, endPos);
+            
+            // Try to find a more natural end point
+            const naturalEndPoints = ['. ', '? ', '! ', '\n'];
+            for (const endPoint of naturalEndPoints) {
+                const index = editedText.indexOf(endPoint);
+                if (index !== -1) {
+                    // Include the end point in the edited text
+                    editedText = editedText.substring(0, index + endPoint.length);
+                    break;
+                }
+            }
         } else if (afterAnchor) {
             // Only have an anchor after - take text from the beginning or a reasonable length before
             const maxLength = 100; // Reasonable maximum replacement length
             const startPos = Math.max(0, afterAnchor.start - maxLength);
             editedText = currentText.substring(startPos, afterAnchor.start);
+            
+            // Try to find a more natural start point
+            const naturalStartPoints = ['. ', '? ', '! ', '\n'];
+            for (const startPoint of naturalStartPoints) {
+                const index = editedText.lastIndexOf(startPoint);
+                if (index !== -1) {
+                    // Start after the start point
+                    editedText = editedText.substring(index + startPoint.length);
+                    break;
+                }
+            }
         } else {
             // No anchors on either side - entire text might have been modified
             editedText = currentText;
