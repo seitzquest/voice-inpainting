@@ -49,6 +49,9 @@ class TokenizedAudio:
 
     # Llama tokens when semantic_only=True
     llama_tokens: Optional[List[int]] = None
+    
+    # Mapping from semantic (word) indices to RVQ token indices
+    semantic_to_rvq_map: Optional[Dict[int, int]] = None
 
 
 class AudioTokenizer:
@@ -99,6 +102,48 @@ class AudioTokenizer:
         )
 
         return tokenizer
+
+    def create_semantic_to_rvq_mapping(self, word_timestamps, rvq_tokens=None):
+        """
+        Create a consistent mapping from semantic (word) indices to RVQ token indices
+        This mapping should be the same regardless of semantic_only parameter
+        
+        Args:
+            word_timestamps: List of word timing info from Whisper
+            rvq_tokens: RVQ tokens tensor (optional, for validation)
+            
+        Returns:
+            Dict mapping semantic token indices to RVQ token indices
+        """
+        semantic_to_rvq_map = {}
+        
+        if not word_timestamps or len(word_timestamps) == 0:
+            return semantic_to_rvq_map
+        
+        # Calculate token frame rate (Mimi uses 12.5 Hz - 80ms per frame)
+        token_frame_rate = 12.5  # frames per second
+        
+        # Get max valid token index if rvq_tokens is provided
+        max_token_idx = None
+        if rvq_tokens is not None:
+            max_token_idx = rvq_tokens.shape[1] - 1
+        
+        # Map each word index to the corresponding RVQ token index based on timing
+        for i, word_info in enumerate(word_timestamps):
+            # Get word timing
+            start_time = word_info["start"]
+            
+            # Convert timestamp to RVQ token index
+            rvq_index = round(start_time * token_frame_rate)
+            
+            # Ensure index is valid if we have rvq_tokens
+            if max_token_idx is not None:
+                rvq_index = min(max(0, rvq_index), max_token_idx)
+            
+            # Map the word index (semantic token index) to the RVQ token index
+            semantic_to_rvq_map[i] = rvq_index
+        
+        return semantic_to_rvq_map
 
     def tokenize(
         self, audio_path: str, speaker_id: int = 0, semantic_only: bool = False
@@ -197,6 +242,12 @@ class AudioTokenizer:
                 transcribed_text, word_timestamps
             )
 
+        # Create consistent mapping from semantic (word) to RVQ token indices
+        semantic_to_rvq_map = self.create_semantic_to_rvq_mapping(
+            word_timestamps, 
+            rvq_tokens if not semantic_only else None
+        )
+
         logger.info(f"Transcribed text: {transcribed_text}")
         if not semantic_only:
             logger.info(f"RVQ tokens shape: {rvq_tokens.shape}")
@@ -218,6 +269,7 @@ class AudioTokenizer:
             speaker_id=speaker_id,
             word_timestamps=word_timestamps,
             llama_tokens=llama_tokens,
+            semantic_to_rvq_map=semantic_to_rvq_map,
         )
 
     def _get_llama_tokens_for_text(self, text: str, speaker_id: int) -> List[int]:
@@ -507,4 +559,3 @@ class AudioTokenizer:
             f"Extracted context tokens: left={left_context.shape[1]}, edit={edit_region.shape[1]}, right={right_context.shape[1]}"
         )
         return left_context, edit_region, right_context
-    

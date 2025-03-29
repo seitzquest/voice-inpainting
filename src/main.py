@@ -242,10 +242,6 @@ def voice_inpainting_unified(
         logger.info(f"Fusing tokens for edit {i + 1} using {fusion_method} method...")
         fusion_config = FusionConfig(
             method=FusionMethod(fusion_method),
-            crossfade_frames=10,  # Increased for smoother transitions
-            alpha=0.4,
-            decay_factor=0.2,
-            use_semantic_preservation=True,
         )
 
         fusion = TokenFusion(config=fusion_config)

@@ -335,32 +335,34 @@ async def process_audio_multi(
         tokenizer = AudioTokenizer(device=device)
         tokenized_audio = tokenizer.tokenize(input_path)
         
-        # Create a mapping from semantic token index to RVQ token index
-        # In the case of manual editing, the frontend is using indices from the semantic tokens
-        # but we need to translate these to indices in the full RVQ token space
-        semantic_to_rvq_map = {}
-        
-        # Map token_to_text_map keys (semantic token indices) to their positions in RVQ space
-        if hasattr(tokenized_audio, 'token_to_text_map') and tokenized_audio.token_to_text_map:
-            for token_idx, char_pos in tokenized_audio.token_to_text_map.items():
+        # Sort edit operations by their start_token_idx to process from left to right
+        sorted_edits = sorted(edit_ops, key=lambda op: op["start_token_idx"])
+
+        # Use the consistent semantic_to_rvq_map from tokenized_audio
+        semantic_to_rvq_map = tokenized_audio.semantic_to_rvq_map or {}
+
+        # If no mapping is available (should not happen), log a warning
+        if not semantic_to_rvq_map:
+            logger.warning("No semantic_to_rvq_map available in tokenized_audio. Using identity mapping as fallback.")
+            # Create identity mapping as fallback
+            for token_idx in range(len(tokenized_audio.word_timestamps or [])):
                 semantic_to_rvq_map[token_idx] = token_idx
-        
-        # Update each edit operation with the correct token indices
+
+        # Update each edit operation with the correctly translated token indices
         translated_edit_ops = []
-        for op in edit_ops:
-            # Translate start and end token indices using the mapping
-            start_idx = op["start_token_idx"]
-            end_idx = op["end_token_idx"]
+        for i, edit_dict in enumerate(sorted_edits):
+            # Get the semantic token indices from the frontend
+            start_idx = edit_dict["start_token_idx"]
+            end_idx = edit_dict["end_token_idx"]
             
-            # If the indices are in the semantic token space, translate them
-            # If not found in the map, keep the original indices
+            # Translate to RVQ token indices using our mapping
             translated_start = semantic_to_rvq_map.get(start_idx, start_idx)
             translated_end = semantic_to_rvq_map.get(end_idx, end_idx)
             
             # Create a new operation with translated indices
             translated_op = {
-                "original_text": op["original_text"],
-                "edited_text": op["edited_text"],
+                "original_text": edit_dict["original_text"],
+                "edited_text": edit_dict["edited_text"],
                 "start_token_idx": translated_start,
                 "end_token_idx": translated_end
             }
@@ -451,4 +453,4 @@ async def health_check():
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
