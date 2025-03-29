@@ -179,14 +179,26 @@ class TokenGenerator:
             tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file,
         ):
             tmp_path = tmp_file.name
-            # Save the audio to the temporary file
-            torchaudio.save(tmp_path, audio.unsqueeze(0).cpu(), self.sample_rate)
+            
+            # Save the audio to a temporary file
+            # Note: torchaudio.save requires a [channels, samples] format
+            audio_for_saving = audio.view(1, -1) if audio.dim() == 1 else audio
+            torchaudio.save(tmp_path, audio_for_saving.cpu(), self.sample_rate)
 
-            # Use Mimi directly to get RVQ tokens
-            audio_for_encoding = audio.to(self.device).unsqueeze(0).unsqueeze(0)
-            new_tokens = self.tokenizer.mimi.encode(audio_for_encoding)[0]
+            # Use our MLX adapter to get RVQ tokens
+            # Move audio to the device (no unsqueeze needed - the MLX adapter handles dimensions)
+            audio_for_encoding = audio.to(self.device)
+            
+            try:
+                # Try using the streaming encoder which works better for incremental processing
+                new_tokens = self.tokenizer.mimi.encode_step(audio_for_encoding)
+                logger.info("Used streaming encoder for token generation")
+            except Exception as e:
+                # Fall back to regular encode if encode_step fails
+                logger.warning(f"Streaming encode failed: {e}, falling back to regular encode")
+                new_tokens = self.tokenizer.mimi.encode(audio_for_encoding)
 
-            # Clean up
+            # Clean up temporary file
             os.unlink(tmp_path)
 
         logger.info(f"Generated {new_tokens.shape[1]} token frames")

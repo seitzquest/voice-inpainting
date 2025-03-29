@@ -10,10 +10,11 @@ import whisper_timestamped
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 from loguru import logger
-from huggingface_hub import hf_hub_download
-from moshi.models import loaders
 from transformers import AutoTokenizer
 from tokenizers.processors import TemplateProcessing
+
+# Import our platform-specific adapter
+from src.mimi_tokenizer import MimiTokenizer
 
 
 @dataclass
@@ -65,9 +66,8 @@ class AudioTokenizer:
     def _initialize_tokenizers(self):
         """Initialize Mimi RVQ tokenizer, Llama text tokenizer, and Whisper model"""
         logger.info("Initializing Mimi RVQ tokenizer...")
-        mimi_weight = hf_hub_download(loaders.DEFAULT_REPO, loaders.MIMI_NAME)
-        self.mimi = loaders.get_mimi(mimi_weight, device=self.device)
-        self.mimi.set_num_codebooks(32)  # CSM uses 32 codebooks
+        # Use our adapter which will handle platform differences
+        self.mimi = MimiTokenizer(device=self.device, num_codebooks=32)
         self.sample_rate = self.mimi.sample_rate  # 24000 Hz
 
         logger.info("Initializing Llama text tokenizer...")
@@ -141,12 +141,9 @@ class AudioTokenizer:
         if not semantic_only:
             logger.info("Extracting RVQ tokens with Mimi...")
             waveform_device = waveform.to(self.device)
-            rvq_tokens = self.mimi.encode(waveform_device.unsqueeze(0))[
-                0
-            ]  # (num_codebooks, seq_len)
-            semantic_tokens = (
-                rvq_tokens[0].cpu().tolist()
-            )  # First codebook contains semantic tokens
+            # The MimiTokenizer handles reshaping internally - no unsqueeze needed
+            rvq_tokens = self.mimi.encode(waveform_device)  # (num_codebooks, seq_len)
+            semantic_tokens = rvq_tokens[0].cpu().tolist()  # First codebook contains semantic tokens
 
         # Transcribe audio with whisper_timestamped
         logger.info("Transcribing audio with whisper_timestamped...")
@@ -367,8 +364,8 @@ class AudioTokenizer:
         """
         logger.info("Reconstructing audio from RVQ tokens...")
         rvq_tokens = rvq_tokens.to(self.device)
-        # MIMI expects tokens in shape (1, num_codebooks, seq_len)
-        audio = self.mimi.decode(rvq_tokens.unsqueeze(0)).squeeze(0).squeeze(0)
+        # Decode using our adapter, which handles platform differences
+        audio = self.mimi.decode(rvq_tokens)
         return audio.cpu(), self.sample_rate
 
     def find_token_range(
@@ -510,3 +507,4 @@ class AudioTokenizer:
             f"Extracted context tokens: left={left_context.shape[1]}, edit={edit_region.shape[1]}, right={right_context.shape[1]}"
         )
         return left_context, edit_region, right_context
+    

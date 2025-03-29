@@ -21,7 +21,7 @@ def setup_device() -> str:
     """Set up the device for inference
 
     Returns:
-        Device string ("cuda", "mps", or "cpu")
+        Device string ("cuda" or "cpu")
     """
     device = "cpu"
     if torch.cuda.is_available():
@@ -31,7 +31,12 @@ def setup_device() -> str:
         and hasattr(torch.backends, "mps")
         and torch.backends.mps.is_available()
     ):
-        device = "mps"
+        # MPS (Apple Silicon GPU) is available but has compatibility issues with sparse operations
+        logger.warning(
+            "MPS backend detected but not used due to compatibility issues with sparse tensors. "
+            "Falling back to CPU. This will be slower but more reliable."
+        )
+        device = "cpu"  # Force CPU on macOS to avoid sparse tensor issues
 
     logger.info(f"Using device: {device}")
     return device

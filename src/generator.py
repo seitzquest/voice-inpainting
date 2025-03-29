@@ -3,12 +3,13 @@ from typing import List, Tuple
 
 import torch
 import torchaudio
-from huggingface_hub import hf_hub_download
 from src.models import Model, ModelArgs
-from moshi.models import loaders
+from src.watermarking import CSM_1B_GH_WATERMARK, load_watermarker, watermark
 from tokenizers.processors import TemplateProcessing
 from transformers import AutoTokenizer
-from src.watermarking import CSM_1B_GH_WATERMARK, load_watermarker, watermark
+
+# Import MimiTokenizer from mimi_tokenizer.py
+from src.mimi_tokenizer import MimiTokenizer
 
 
 @dataclass
@@ -50,14 +51,12 @@ class Generator:
         self._text_tokenizer = load_llama3_tokenizer()
 
         device = next(model.parameters()).device
-        mimi_weight = hf_hub_download(loaders.DEFAULT_REPO, loaders.MIMI_NAME)
-        mimi = loaders.get_mimi(mimi_weight, device=device)
-        mimi.set_num_codebooks(32)
-        self._audio_tokenizer = mimi
+        # Use MimiTokenizer for all platforms
+        self._audio_tokenizer = MimiTokenizer(device=device, num_codebooks=32)
 
         self._watermarker = load_watermarker(device=device)
 
-        self.sample_rate = mimi.sample_rate
+        self.sample_rate = self._audio_tokenizer.sample_rate
         self.device = device
 
     def _tokenize_text_segment(
@@ -81,9 +80,12 @@ class Generator:
         frame_tokens = []
         frame_masks = []
 
-        # (K, T)
+        # Move audio to device
         audio = audio.to(self.device)
-        audio_tokens = self._audio_tokenizer.encode(audio.unsqueeze(0).unsqueeze(0))[0]
+        
+        # The MLX tokenizer will handle proper reshaping internally
+        audio_tokens = self._audio_tokenizer.encode(audio)
+        
         # add EOS frame
         eos_frame = torch.zeros(audio_tokens.size(0), 1).to(self.device)
         audio_tokens = torch.cat([audio_tokens, eos_frame], dim=1)
@@ -142,6 +144,7 @@ class Generator:
         prompt_tokens_mask = torch.cat(tokens_mask, dim=0).bool().to(self.device)
 
         samples = []
+        # These unsqueeze operations are necessary for the model input format
         curr_tokens = prompt_tokens.unsqueeze(0)
         curr_tokens_mask = prompt_tokens_mask.unsqueeze(0)
         curr_pos = (
@@ -175,11 +178,8 @@ class Generator:
             ).unsqueeze(1)
             curr_pos = curr_pos[:, -1:] + 1
 
-        audio = (
-            self._audio_tokenizer.decode(torch.stack(samples).permute(1, 2, 0))
-            .squeeze(0)
-            .squeeze(0)
-        )
+        # Use MimiTokenizer's decode method without unnecessary reshaping
+        audio = self._audio_tokenizer.decode(torch.stack(samples).permute(1, 2, 0))
 
         # This applies an imperceptible watermark to identify audio as AI-generated.
         # Watermarking ensures transparency, dissuades misuse, and enables traceability.

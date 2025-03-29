@@ -6,8 +6,7 @@ authors = [{ name = "Philipp Seitz", email = "phlippseitz@gmail.com" }]
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 dependencies = [
-    "numpy<=1.26.4",
-    "streamlit>=1.40.2,<2",
+    "numpy>=2.1.0",
     "matplotlib>=3.9.3,<4",
     "watchdog>=6.0.0,<7",
     "ffmpeg-python>=0.2.0,<0.3",
@@ -19,7 +18,6 @@ dependencies = [
     "loguru>=0.7.2,<0.8",
     "fastapi>=0.115.11",
     "uvicorn>=0.34.0",
-    "openai-whisper",
     "librosa>=0.11.0",
     "pyrubberband>=0.4.0",
     "torch>=2.4.0",
@@ -35,6 +33,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "dotenv>=0.9.9",
     "whisper-timestamped>=1.15.8",
+    "moshi-mlx>=0.2.3",
 ]
 
 [[tool.uv.index]]
@@ -43,7 +42,6 @@ url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [tool.uv.sources]
-openai-whisper = { git = "https://github.com/openai/whisper" }
 torch = [
   { index = "pytorch-cu124", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
