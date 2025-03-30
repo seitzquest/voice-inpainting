@@ -470,17 +470,6 @@ class AudioTokenizer:
                 next_pos = max(tokenized_audio.text_to_token_map.keys())
                 end_token_idx = tokenized_audio.text_to_token_map[next_pos]
 
-        # Add a small buffer to ensure we capture the entire content
-        end_token_idx += 3
-
-        # Ensure we don't exceed the available tokens
-        if tokenized_audio.rvq_tokens is not None:
-            end_token_idx = min(end_token_idx, tokenized_audio.rvq_tokens.shape[1] - 1)
-
-        # Ensure start_token_idx is before end_token_idx
-        if start_token_idx > end_token_idx:
-            start_token_idx, end_token_idx = end_token_idx, start_token_idx
-
         logger.info(
             f"Text range {text_range} maps to token range [{start_token_idx}, {end_token_idx}]"
         )

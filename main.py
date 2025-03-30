@@ -186,7 +186,6 @@ async def process_audio(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     prompt: str = Form(...),
-    fusion_method: Optional[str] = Form("crossfade"),  # Kept for API compatibility but not used
     temperature: Optional[float] = Form(0.7),
     topk: Optional[int] = Form(25),
     return_metadata: Optional[bool] = Form(False),
@@ -194,8 +193,6 @@ async def process_audio(
     """Process audio with a single edit prompt"""
     # Log details about the uploaded file
     logger.info(f"Received file: {audio.filename}, Content-Type: {audio.content_type}")
-    if fusion_method != "crossfade":
-        logger.info(f"Note: fusion_method={fusion_method} specified but not used in the integrated approach")
 
     # Generate unique IDs for the input and output files
     session_id = str(uuid.uuid4())
@@ -284,7 +281,6 @@ async def process_audio_multi(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     edit_operations: str = Form(...),
-    fusion_method: Optional[str] = Form("crossfade"),  # Kept for API compatibility but not used
     temperature: Optional[float] = Form(0.7),
     topk: Optional[int] = Form(25),
     return_metadata: Optional[bool] = Form(False),
@@ -292,8 +288,6 @@ async def process_audio_multi(
     """Process audio with multiple edit operations"""
     # Log details about the uploaded file
     logger.info(f"Received file: {audio.filename}, Content-Type: {audio.content_type}")
-    if fusion_method != "crossfade":
-        logger.info(f"Note: fusion_method={fusion_method} specified but not used in the integrated approach")
 
     # Generate unique IDs for the input and output files
     session_id = str(uuid.uuid4())
@@ -388,7 +382,7 @@ async def process_audio_multi(
             translated_edit_ops.append(translated_op)
             
             logger.info(f"Translated token indices: {start_idx}->{translated_start}, {end_idx}->{translated_end}")
-        
+
         # Process the audio with the new integrated voice inpainting function
         start_time = time.time()
         processing_result = voice_inpainting(

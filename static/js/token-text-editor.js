@@ -1058,11 +1058,10 @@ class TokenTextEditor {
     }
     
     /**
-     * Infer what text has replaced a group of modified tokens
-     * Improved to better handle spaces in edited text
+     * Infer edited text for a group of modified tokens
      * @param {Array} modifiedTokenIndices - Array of modified token indices
-     * @param {string} currentText - Current text
-     * @returns {string} - The text that likely replaced these tokens
+     * @param {string} currentText - Current text in the text area
+     * @returns {string} - Edited text inferred from the current text
      */
     inferEditedTextForTokens(modifiedTokenIndices, currentText) {
         // Sort original tokens by their position
@@ -1108,42 +1107,80 @@ class TokenTextEditor {
         
         if (beforeAnchor && afterAnchor) {
             // We have anchors on both sides
-            editedText = currentText.substring(beforeAnchor.end, afterAnchor.start);
-        } else if (beforeAnchor) {
-            // Only have an anchor before - take text from there to the end or a reasonable length
-            const maxLength = 100; // Reasonable maximum replacement length
-            const endPos = Math.min(beforeAnchor.end + maxLength, currentText.length);
-            editedText = currentText.substring(beforeAnchor.end, endPos);
+            let startPos = beforeAnchor.end;
+            let endPos = afterAnchor.start;
             
-            // Try to find a more natural end point
-            const naturalEndPoints = ['. ', '? ', '! ', '\n'];
-            for (const endPoint of naturalEndPoints) {
-                const index = editedText.indexOf(endPoint);
-                if (index !== -1) {
-                    // Include the end point in the edited text
-                    editedText = editedText.substring(0, index + endPoint.length);
-                    break;
+            // Trim ALL whitespace from boundaries
+            // This approach handles cases with multiple spaces or different types of whitespace
+            const textBetweenAnchors = currentText.substring(startPos, endPos);
+            const trimmedText = textBetweenAnchors.trim();
+            
+            if (trimmedText.length > 0) {
+                // Find the position of the trimmed text within the original text between anchors
+                const startOffset = textBetweenAnchors.indexOf(trimmedText);
+                editedText = trimmedText;
+            } else {
+                // If there's only whitespace between the anchors, return empty string
+                editedText = '';
+            }
+        } else if (beforeAnchor) {
+            // Only have an anchor before
+            let startPos = beforeAnchor.end;
+            const maxLength = 100; // Reasonable maximum length
+            
+            // Get text after the anchor
+            const textAfterAnchor = currentText.substring(startPos, Math.min(startPos + maxLength, currentText.length));
+            // Trim leading whitespace
+            const trimmedStart = textAfterAnchor.replace(/^\s+/, '');
+            
+            if (trimmedStart.length > 0) {
+                // Calculate the real starting position after whitespace
+                startPos += textAfterAnchor.length - trimmedStart.length;
+                
+                // Find a natural end point
+                let endPos = startPos + trimmedStart.length;
+                const naturalEndPoints = ['. ', '? ', '! ', '\n'];
+                for (const endPoint of naturalEndPoints) {
+                    const index = trimmedStart.indexOf(endPoint);
+                    if (index !== -1) {
+                        endPos = startPos + index + endPoint.length;
+                        break;
+                    }
                 }
+                
+                editedText = currentText.substring(startPos, endPos);
             }
         } else if (afterAnchor) {
-            // Only have an anchor after - take text from the beginning or a reasonable length before
-            const maxLength = 100; // Reasonable maximum replacement length
-            const startPos = Math.max(0, afterAnchor.start - maxLength);
-            editedText = currentText.substring(startPos, afterAnchor.start);
+            // Only have an anchor after
+            let endPos = afterAnchor.start;
+            const maxLength = 100; // Reasonable maximum length
             
-            // Try to find a more natural start point
-            const naturalStartPoints = ['. ', '? ', '! ', '\n'];
-            for (const startPoint of naturalStartPoints) {
-                const index = editedText.lastIndexOf(startPoint);
-                if (index !== -1) {
-                    // Start after the start point
-                    editedText = editedText.substring(index + startPoint.length);
-                    break;
+            // Get text before the anchor, limited to maxLength
+            const textBeforeAnchor = currentText.substring(Math.max(0, endPos - maxLength), endPos);
+            // Trim trailing whitespace
+            const trimmedEnd = textBeforeAnchor.replace(/\s+$/, '');
+            
+            if (trimmedEnd.length > 0) {
+                // Calculate the real ending position before whitespace
+                endPos = endPos - (textBeforeAnchor.length - trimmedEnd.length);
+                
+                // Find a natural start point
+                let startPos = endPos - trimmedEnd.length;
+                const naturalStartPoints = ['. ', '? ', '! ', '\n'];
+                for (const startPoint of naturalStartPoints) {
+                    const index = trimmedEnd.lastIndexOf(startPoint);
+                    if (index !== -1) {
+                        startPos = endPos - trimmedEnd.length + index + startPoint.length;
+                        break;
+                    }
                 }
+                
+                editedText = currentText.substring(startPos, endPos);
             }
         } else {
             // No anchors on either side - entire text might have been modified
-            editedText = currentText;
+            // Still trim to match the behavior in other cases
+            editedText = currentText.trim();
         }
         
         return editedText;
