@@ -1,18 +1,23 @@
 /**
- * Simplified waveform-editor.js
- * Waveform visualization with token highlighting
+ * Improved waveform-editor.js
+ * Waveform visualization with better token highlighting, integrated download button,
+ * and generated audio visualization
  */
 
 class WaveformEditor {
     constructor(container, options = {}) {
         this.container = container;
         this.options = Object.assign({
-            height: 100,
+            height: 120,
             barWidth: 3,
             barGap: 1,
+            // More subtle colors for selection
             selectedColor: 'var(--color-primary-light)',
-            selectedRangeColor: 'rgba(157, 184, 89, 0.15)',
-            selectedRangeDarkColor: 'rgba(157, 184, 89, 0.25)',
+            selectedRangeColor: 'rgba(157, 184, 89, 0.1)',
+            selectedRangeDarkColor: 'rgba(157, 184, 89, 0.15)',
+            // Distinct color for generated audio
+            generatedColor: '#5DA831',  // Bright green for light mode
+            generatedDarkColor: '#9DB859', // Lighter green for dark mode
             modifiedColor: '#FF5252',
             defaultColor: '#333333',
             darkModeDefaultColor: '#B0B0B0',
@@ -38,6 +43,7 @@ class WaveformEditor {
         this.selectedTokens = [];
         this.modifiedTokens = [];
         this.highlightedRegions = [];
+        this.generatedRegions = []; // Track regions of generated audio
 
         // Playback state
         this.isPlaying = false;
@@ -45,6 +51,10 @@ class WaveformEditor {
         
         // Interaction
         this.isDragging = false;
+        
+        // Events
+        this.onPlayPause = null;
+        this.onDownload = null;
     }
     
     /**
@@ -147,6 +157,7 @@ class WaveformEditor {
             this.options.selectedColor = window.getComputedStyle(tempEl).color || '#9DB859';
             
             this.options.currentRangeColor = this.options.selectedRangeDarkColor;
+            this.options.currentGeneratedColor = this.options.generatedDarkColor;
         } else {
             tempEl.className = 'text-gray-bars';
             this.options.defaultColor = window.getComputedStyle(tempEl).color || '#333333';
@@ -155,6 +166,7 @@ class WaveformEditor {
             this.options.selectedColor = window.getComputedStyle(tempEl).color || '#5DA831';
             
             this.options.currentRangeColor = this.options.selectedRangeColor;
+            this.options.currentGeneratedColor = this.options.generatedColor;
         }
         
         tempEl.className = 'text-red-bar';
@@ -167,19 +179,62 @@ class WaveformEditor {
      * Create play/pause button
      */
     createPlayButton() {
+        const waveformControls = document.createElement('div');
+        waveformControls.className = 'waveform-controls';
+        
         const playButton = document.createElement('button');
         playButton.id = 'waveformPlayButton';
-        playButton.className = 'control-btn play-btn absolute bottom-2 left-2';
-        playButton.style.zIndex = '4';
+        playButton.className = 'control-btn play-btn';
+        playButton.setAttribute('aria-label', 'Play audio');
         playButton.innerHTML = `
             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
         `;
-        this.canvasContainer.appendChild(playButton);
         
-        playButton.addEventListener('click', () => this.togglePlayback());
+        waveformControls.appendChild(playButton);
+        this.canvasContainer.appendChild(waveformControls);
+        
+        // Play/pause functionality
+        playButton.addEventListener('click', () => {
+            this.togglePlayback();
+            
+            // Trigger callback if defined
+            if (typeof this.onPlayPause === 'function') {
+                this.onPlayPause(this.isPlaying);
+            }
+        });
+        
+        // Find existing download button in the container
+        const downloadBtn = this.container.querySelector('.waveform-download-btn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Trigger callback if defined
+                if (typeof this.onDownload === 'function') {
+                    this.onDownload();
+                }
+            });
+        }
+    }
+    
+    /**
+     * Set play/pause button callback
+     * @param {Function} callback - Callback function
+     */
+    setPlayPauseCallback(callback) {
+        this.onPlayPause = callback;
+    }
+    
+    /**
+     * Set download button callback
+     * @param {Function} callback - Callback function
+     */
+    setDownloadCallback(callback) {
+        this.onDownload = callback;
     }
     
     /**
@@ -259,6 +314,7 @@ class WaveformEditor {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
+            playButton.setAttribute('aria-label', 'Pause audio');
             playButton.classList.remove('play-btn');
             playButton.classList.add('pause-btn');
         } else {
@@ -268,6 +324,7 @@ class WaveformEditor {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             `;
+            playButton.setAttribute('aria-label', 'Play audio');
             playButton.classList.remove('pause-btn');
             playButton.classList.add('play-btn');
         }
@@ -351,7 +408,25 @@ class WaveformEditor {
         this.selectedTokens = tokenIndices || [];
         this.calculateHighlightedRegions();
         this.drawSelectionRanges();
+    }
+    
+    /**
+     * Mark tokens as modified
+     * @param {Array} tokenIndices - Array of token indices to mark as modified
+     */
+    markModifiedTokens(tokenIndices) {
+        this.modifiedTokens = tokenIndices || [];
         this.draw();
+    }
+    
+    /**
+     * Mark regions as generated
+     * @param {Array} regions - Array of {start, end} time ranges that were generated
+     */
+    markGeneratedRegions(regions) {
+        this.generatedRegions = regions || [];
+        this.draw();
+        this.drawSelectionRanges();
     }
         
     /**
@@ -376,7 +451,7 @@ class WaveformEditor {
     }
     
     /**
-     * Draw selection ranges
+     * Draw selection ranges with more subtle highlighting
      */
     drawSelectionRanges() {
         if (!this.audioData || !this.selectionCtx) return;
@@ -386,25 +461,39 @@ class WaveformEditor {
         const height = this.options.height;
         this.selectionCtx.clearRect(0, 0, width, height);
         
-        if (!this.highlightedRegions || !this.highlightedRegions.length) return;
-        
-        // Draw highlighted regions
-        for (const region of this.highlightedRegions) {
-            const startX = this.timeToPosition(region.start);
-            const endX = this.timeToPosition(region.end);
-            
-            this.selectionCtx.fillStyle = this.options.currentRangeColor;
-            this.selectionCtx.fillRect(startX, 0, endX - startX, height);
+        // Draw highlighted regions for selection (more subtle now)
+        if (this.highlightedRegions && this.highlightedRegions.length) {
+            for (const region of this.highlightedRegions) {
+                const startX = this.timeToPosition(region.start);
+                const endX = this.timeToPosition(region.end);
+                
+                this.selectionCtx.fillStyle = this.options.currentRangeColor;
+                this.selectionCtx.fillRect(startX, 0, endX - startX, height);
+            }
         }
-    }
-    
-    /**
-     * Mark tokens as modified
-     * @param {Array} tokenIndices - Array of token indices to mark as modified
-     */
-    markModifiedTokens(tokenIndices) {
-        this.modifiedTokens = tokenIndices || [];
-        this.draw();
+        
+        // Draw generated regions with a subtle outline
+        if (this.generatedRegions && this.generatedRegions.length) {
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            const outlineColor = isDarkMode ? 'rgba(157, 184, 89, 0.4)' : 'rgba(93, 168, 49, 0.25)';
+            
+            for (const region of this.generatedRegions) {
+                const startX = this.timeToPosition(region.start);
+                const endX = this.timeToPosition(region.end);
+                
+                // Draw a subtle border to mark the region
+                this.selectionCtx.strokeStyle = outlineColor;
+                this.selectionCtx.lineWidth = 1;
+                this.selectionCtx.strokeRect(startX, 0, endX - startX, height);
+                
+                // Add a label if the region is wide enough
+                if (endX - startX > 60) {
+                    this.selectionCtx.font = '10px Arial';
+                    this.selectionCtx.fillStyle = isDarkMode ? 'rgba(157, 184, 89, 0.7)' : 'rgba(93, 168, 49, 0.6)';
+                    this.selectionCtx.fillText('Generated', startX + 4, 12);
+                }
+            }
+        }
     }
     
     /**
@@ -443,6 +532,7 @@ class WaveformEditor {
         // Determine bar color based on dark mode
         const isDarkMode = document.documentElement.classList.contains('dark');
         const defaultColor = isDarkMode ? this.options.darkModeDefaultColor : this.options.defaultColor;
+        const generatedColor = isDarkMode ? this.options.generatedDarkColor : this.options.generatedColor;
         
         // Create a map of token times for efficient lookup
         const tokenTimeMap = new Map();
@@ -475,21 +565,22 @@ class WaveformEditor {
             const startTime = this.positionToTime(x);
             const endTime = this.positionToTime(x + this.options.barWidth);
             
-            // Check if this bar is in a modified region
-            for (const tokenIdx of this.modifiedTokens) {
-                const timeInfo = tokenTimeMap.get(tokenIdx);
-                if (timeInfo && endTime >= timeInfo.start && startTime <= timeInfo.end) {
-                    barColor = this.options.modifiedColor;
+            // Check if this bar is in a generated region first (highest priority)
+            let isGenerated = false;
+            for (const region of this.generatedRegions) {
+                if (endTime >= region.start && startTime <= region.end) {
+                    barColor = generatedColor;
+                    isGenerated = true;
                     break;
                 }
             }
             
-            // If not modified, check if it's selected
-            if (barColor === defaultColor) {
-                for (const tokenIdx of this.selectedTokens) {
+            // If not generated, check if it's modified
+            if (!isGenerated) {
+                for (const tokenIdx of this.modifiedTokens) {
                     const timeInfo = tokenTimeMap.get(tokenIdx);
                     if (timeInfo && endTime >= timeInfo.start && startTime <= timeInfo.end) {
-                        barColor = this.options.selectedColor;
+                        barColor = this.options.modifiedColor;
                         break;
                     }
                 }
@@ -655,6 +746,7 @@ class WaveformEditor {
         this.selectedTokens = [];
         this.modifiedTokens = [];
         this.highlightedRegions = [];
+        this.generatedRegions = [];
     }
 }
 

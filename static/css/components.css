@@ -1,82 +1,11 @@
 /* 
 * components.css
-* Styles for specific UI components
+* Styles for specific UI components with refinements
 */
 
-/* Progress steps component */
+/* Hide progress steps */
 .progress-container {
-    display: flex;
-    margin-bottom: 2rem;
-}
-
-.progress-step {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    position: relative;
-}
-
-.progress-step::before {
-    content: '';
-    position: absolute;
-    top: 1rem;
-    left: -50%;
-    width: 100%;
-    height: 2px;
-    background-color: var(--color-gray);
-    z-index: 0;
-}
-
-.progress-step:first-child::before {
     display: none;
-}
-
-.progress-marker {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    background-color: var(--color-gray);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-dark);
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    z-index: 1;
-    transition: var(--transition-default);
-}
-
-.progress-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-dark);
-    opacity: 0.7;
-    transition: var(--transition-default);
-}
-
-.progress-step.active .progress-marker {
-    background-color: var(--color-primary);
-    color: var(--color-light);
-}
-
-.progress-step.active .progress-label {
-    color: var(--color-primary);
-    opacity: 1;
-}
-
-.progress-step.complete .progress-marker {
-    background-color: var(--color-primary-light);
-    color: var(--color-light);
-}
-
-.progress-step.complete::before {
-    background-color: var(--color-primary-light);
-}
-
-/* Active line connection */
-.progress-step.line-active::before {
-    background-color: var(--color-primary-light);
 }
 
 /* Recording UI components */
@@ -290,3 +219,465 @@
 .preview-waveform-bar:nth-child(8) { height: 14px; }
 .preview-waveform-bar:nth-child(9) { height: 8px; }
 .preview-waveform-bar:nth-child(10) { height: 12px; }
+
+/* Version control styling */
+#versionControlContainer {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.version-control {
+    display: flex;
+    align-items: center;
+    background-color: var(--color-light);
+    border-radius: var(--radius-md);
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    box-shadow: var(--shadow-subtle);
+    transition: background-color 0.3s ease;
+}
+
+.dark .version-control {
+    background-color: #2A2A2A;
+    border: 1px solid #444;
+}
+
+#previousVersionButton,
+#nextVersionButton {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-dark); /* Use dark color in light mode */
+    transition: all 0.2s ease;
+}
+
+.dark #previousVersionButton,
+.dark #nextVersionButton {
+    color: var(--color-light); /* Use light color in dark mode */
+}
+
+#previousVersionButton:not(:disabled):hover,
+#nextVersionButton:not(:disabled):hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    transform: scale(1.1);
+}
+
+.dark #previousVersionButton:not(:disabled):hover,
+.dark #nextVersionButton:not(:disabled):hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+#previousVersionButton:disabled,
+#nextVersionButton:disabled {
+    color: var(--color-gray);
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+#versionDisplay {
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-dark);
+    font-weight: 500;
+}
+
+.dark #versionDisplay {
+    color: var(--color-light);
+}
+
+/* Edit action buttons styling */
+#editActionButtons {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Style the send button */
+.send-button {
+    background-color: var(--color-primary) !important;
+    color: var(--color-light) !important;
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+}
+
+.dark .send-button {
+    background-color: var(--color-primary-light) !important;
+    color: var(--color-dark) !important;
+}
+
+.send-button .send-icon {
+    width: 20px;
+    height: 20px;
+    stroke: var(--color-light);
+}
+
+.dark .send-button .send-icon {
+    stroke: var(--color-dark);
+}
+
+.send-button:hover {
+    transform: scale(1.05);
+    background-color: var(--color-primary-light) !important;
+}
+
+.dark .send-button:hover {
+    background-color: var(--color-primary) !important;
+}
+
+/* Fix action button colors in light/dark mode */
+#editActionButtons button svg {
+    stroke: var(--color-dark); /* Dark in light mode */
+}
+
+.dark #editActionButtons button svg {
+    stroke: var(--color-light); /* Light in dark mode */
+}
+
+#downloadButton, #resetEditButton {
+    background-color: var(--color-secondary);
+    color: var(--color-dark);
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.dark #downloadButton, 
+.dark #resetEditButton {
+    background-color: #444;
+    color: var(--color-light);
+}
+
+/* Edit mode dropdown (Claude-like style) */
+.edit-mode-dropdown {
+    position: relative;
+    width: 100%;
+    max-width: 300px;
+    margin: 0 auto 1rem;
+    font-size: 0.875rem;
+    z-index: 10;
+}
+
+.edit-mode-selected {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-md);
+    background-color: var(--color-secondary-light);
+    cursor: pointer;
+    font-weight: 500;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.dark .edit-mode-selected {
+    background-color: #2A2A2A;
+    border-color: #444;
+    color: var(--color-light);
+}
+
+.edit-mode-selected:hover {
+    border-color: var(--color-primary);
+}
+
+.dropdown-arrow {
+    transition: transform 0.2s ease;
+}
+
+.edit-mode-selected:hover .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.edit-mode-options {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background-color: var(--color-light);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    transition: all 0.2s ease;
+    border: 1px solid var(--color-gray);
+}
+
+.dark .edit-mode-options {
+    background-color: #2A2A2A;
+    border-color: #444;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.edit-mode-option {
+    padding: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.2s ease;
+}
+
+.edit-mode-option:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark .edit-mode-option:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.edit-mode-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    color: var(--color-dark);
+}
+
+.dark .edit-mode-name {
+    color: var(--color-light);
+}
+
+.edit-mode-description {
+    font-size: 0.75rem;
+    color: var(--color-dark);
+    opacity: 0.7;
+}
+
+.dark .edit-mode-description {
+    color: var(--color-light);
+    opacity: 0.7;
+}
+
+.edit-mode-options.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+}
+
+/* Make manual and prompt editing more consistent */
+#manualEditorContainer, #editSection {
+    margin-bottom: 1.5rem;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Consistent input styling */
+.token-editor-input, #editPrompt {
+    width: 100%;
+    border: 1px solid var(--color-gray);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+    background-color: var(--color-light);
+    color: var(--color-dark);
+    min-height: 100px;
+}
+
+.dark .token-editor-input, 
+.dark #editPrompt {
+    background-color: #2A2A2A;
+    color: var(--color-light);
+    border-color: #444;
+}
+
+.token-editor-input:focus, 
+#editPrompt:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(91, 101, 41, 0.2);
+}
+
+.dark .token-editor-input:focus, 
+.dark #editPrompt:focus {
+    box-shadow: 0 0 0 2px rgba(157, 184, 89, 0.2);
+}
+
+/* Consistent section headings */
+.section-heading {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--color-dark);
+}
+
+.dark .section-heading {
+    color: var(--color-light);
+}
+
+/* Consistent waveform container for both modes */
+.waveform-editor-container {
+    border-radius: var(--radius-md);
+    background-color: var(--color-light);
+    box-shadow: var(--shadow-subtle);
+    margin-bottom: 1rem;
+    overflow: hidden;
+    position: relative;
+}
+
+.dark .waveform-editor-container {
+    background-color: #2A2A2A;
+    border: 1px solid #444;
+}
+
+/* Back button */
+.back-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--color-primary);
+    font-weight: 500;
+    transition: var(--transition-default);
+    cursor: pointer;
+    margin-bottom: 1rem;
+}
+
+.back-button:hover {
+    color: var(--color-primary-light);
+}
+
+.dark .back-button {
+    color: var(--color-primary-light);
+}
+
+.dark .back-button:hover {
+    color: var(--color-primary);
+}
+
+.back-button svg {
+    stroke: currentColor;
+}
+
+/* Audio player */
+.audio-player {
+    width: 100%;
+    height: 50px;
+    border-radius: 9999px;
+    margin: 1rem 0;
+}
+
+.audio-player::-webkit-media-controls-panel {
+    background-color: rgba(226, 230, 212, 0.7);
+}
+
+.dark .audio-player::-webkit-media-controls-panel {
+    background-color: rgba(70, 70, 70, 0.8);
+}
+
+.audio-player::-webkit-media-controls-play-button {
+    background-color: var(--color-primary);
+    border-radius: 50%;
+}
+
+/* Success message styling */
+.success-message {
+    background-color: rgba(157, 184, 89, 0.15);
+    border-left: 4px solid var(--color-primary-light);
+    color: var(--color-primary-dark);
+    padding: 1rem;
+    border-radius: var(--radius-sm);
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+}
+
+.dark .success-message {
+    background-color: rgba(157, 184, 89, 0.2);
+    color: var(--color-primary-light);
+}
+
+.success-message svg {
+    stroke: currentColor;
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+}
+
+/* Error message */
+.error-message {
+    background-color: rgba(185, 28, 28, 0.1);
+    border-left: 4px solid var(--color-error);
+    color: var(--color-error);
+    padding: 1rem;
+    border-radius: var(--radius-sm);
+    margin-bottom: 1.5rem;
+}
+
+/* Loading spinner */
+.loading-spinner {
+    border: 3px solid rgba(91, 101, 41, 0.2);
+    border-top: 3px solid var(--color-primary);
+    border-radius: 50%;
+    width: 2.5rem;
+    height: 2.5rem;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+}
+
+/* Token highlighting - more subtle */
+.token-editor-overlay .token-selected {
+    background-color: rgba(91, 101, 41, 0.1);
+}
+
+.dark .token-editor-overlay .token-selected {
+    background-color: rgba(157, 184, 89, 0.2);
+}
+
+/* Generated region indicator */
+.generated-label {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    font-size: 0.625rem;
+    padding: 0.125rem 0.25rem;
+    border-radius: 2px;
+    background-color: rgba(157, 184, 89, 0.2);
+    color: var(--color-primary-dark);
+    pointer-events: none;
+    z-index: 5;
+}
+
+.dark .generated-label {
+    background-color: rgba(157, 184, 89, 0.3);
+    color: var(--color-primary-light);
+}
+
+/* Mobile optimization */
+@media (max-width: 640px) {
+    .edit-mode-dropdown {
+        max-width: 100%;
+    }
+    
+    #editActionButtons {
+        gap: 0.5rem;
+    }
+    
+    .send-button,
+    #downloadButton,
+    #resetEditButton {
+        width: 38px !important;
+        height: 38px !important;
+    }
+    
+    .waveform-editor-container {
+        height: 80px !important;
+    }
+    
+    .token-editor-input {
+        min-height: 80px;
+    }
+    
+    .edit-mode-selection .radio-group {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+}

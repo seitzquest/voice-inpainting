@@ -25,9 +25,25 @@
     to { transform: translateY(0); opacity: 1; }
 }
 
+@keyframes slideInRight {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInLeft {
+    from { transform: translateX(-20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+@keyframes successPulse {
+    0% { background-color: rgba(157, 184, 89, 0.2); }
+    50% { background-color: rgba(157, 184, 89, 0.3); }
+    100% { background-color: rgba(157, 184, 89, 0.2); }
 }
 
 /* Animation Classes */
@@ -39,16 +55,83 @@
     animation: slideIn 0.5s ease-out forwards;
 }
 
+.slide-in-right {
+    animation: slideInRight 0.5s ease-out forwards;
+}
+
+.slide-in-left {
+    animation: slideInLeft 0.5s ease-out forwards;
+}
+
 /* Override transition for elements with animations to avoid conflicts */
 .recording-pulse, 
 .fade-in, 
 .slide-in,
 .loading-spinner,
-.waveform-bar {
+.waveform-bar,
+.success-message {
     transition: none !important;
 }
 
 /* Ensure SVG logos don't have jarring transitions */
 .svg-logo {
     transition: var(--transition-default);
+}
+
+/* Button hover animations */
+.control-btn:hover,
+.action-btn:hover {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
+
+/* Animation for success messages */
+.success-message {
+    animation: slideIn 0.3s ease-out forwards;
+}
+
+/* Animation for generated regions */
+.generated-label {
+    animation: successPulse 2s infinite;
+}
+
+/* Version control button animations */
+#previousVersionButton:not(:disabled):hover,
+#nextVersionButton:not(:disabled):hover {
+    animation: pulse 1s infinite;
+}
+
+/* Smooth transitions for token span highlighting */
+.token-span {
+    transition: background-color 0.2s ease;
+}
+
+/* Smooth playhead transitions */
+.playhead-canvas {
+    transition: transform 0.1s ease;
+}
+
+/* Waveform editor transitions */
+.waveform-editor-container {
+    transition: height 0.3s ease, opacity 0.3s ease;
+}
+
+/* Audio player transitions */
+.audio-player {
+    transition: opacity 0.3s ease;
+}
+
+/* Button transitions */
+.btn, .control-btn {
+    transition: background-color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+/* Edit mode transition */
+.edit-mode-selection {
+    transition: opacity 0.3s ease;
+}
+
+/* Override any disruptive transitions during drag operations */
+.is-dragging, .is-dragging * {
+    transition: none !important;
 }

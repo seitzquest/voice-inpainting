@@ -1,0 +1,1037 @@
+/* 
+* improved-styles.css
+* Comprehensive dark mode and UI consistency improvements
+*/
+
+/* ====== Core Theme Variables ====== */
+:root {
+  /* Colors */
+  --color-primary: #5B6529;
+  --color-primary-light: #9DB859;
+  --color-primary-dark: #404A1C;
+  --color-secondary: #B8B435;
+  --color-secondary-light: #E2E8CC;
+  --color-secondary-dark: #848C28;
+  --color-dark: #111111;
+  --color-light: #FFFFFF;
+  --color-gray: #E5E7EB;
+  --color-gray-hover: #D1D5DB;
+  --color-error: #B91C1C;
+  
+  /* Elevation */
+  --shadow-subtle: 0 2px 15px 0 rgba(160, 160, 160, 0.15);
+  --shadow-medium: 0 4px 20px 0 rgba(0, 0, 0, 0.1);
+  
+  /* Shapes */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-round: 9999px;
+  
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-default: 0.3s ease;
+  
+  /* Typography */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+}
+
+/* Dark mode variables */
+.dark {
+  --color-primary: #9DB859;
+  --color-primary-light: #B8C97A;
+  --color-primary-dark: #738033;
+  --color-secondary: #738033;
+  --color-secondary-light: #9DB859;
+  --color-secondary-dark: #404A1C;
+  --color-dark: #F0F0F0; /* Text is white in dark mode */
+  --color-light: #1A1A1A;
+  --color-gray: #2D2D2D;
+  --color-gray-hover: #3D3D3D;
+  --shadow-subtle: 0 2px 15px 0 rgba(0, 0, 0, 0.5);
+  --shadow-medium: 0 4px 20px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* ====== Base Styles ====== */
+body {
+  background-color: #F6F6F6;
+  color: var(--color-dark);
+  line-height: 1.5;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.dark body {
+  background-color: #121212;
+}
+
+.app-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+/* Card container */
+.card {
+  background-color: var(--color-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-subtle);
+  overflow: visible; /* Changed from hidden to visible */
+  transition: var(--transition-default);
+  padding: 2rem;
+  margin-bottom: 1rem; /* Added margin */
+}
+
+.dark .card {
+  background-color: #1E1E1E;
+  border: 1px solid #333;
+}
+
+/* ====== Typography ====== */
+.section-heading {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin-top: 1.5rem; /* Added top margin */
+  margin-bottom: 1rem;
+  color: var(--color-dark);
+}
+
+.dark .section-heading {
+  color: var(--color-dark); /* White text in dark mode */
+}
+
+/* ====== Header with Logo ====== */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+header h1 {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+}
+
+/* Logo colors - fixed for proper contrast */
+.text-gray-bars {
+  color: #333333; /* Dark in light mode */
+}
+
+.dark .text-gray-bars {
+  color: #F0F0F0; /* Light in dark mode */
+}
+
+.text-red-bar {
+  color: var(--color-error);
+  transition: color var(--transition-fast);
+}
+
+.text-green-bar {
+  color: #5DA831;
+  transition: color var(--transition-fast);
+}
+
+.dark .text-green-bar {
+  color: var(--color-primary);
+}
+
+/* Theme toggle */
+#themeToggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
+  transition: var(--transition-fast);
+}
+
+#themeToggle:hover {
+  background-color: var(--color-gray-hover);
+}
+
+/* ====== Input Methods Selection ====== */
+.input-method-container {
+  margin-bottom: 2rem;
+}
+
+.radio-group {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 640px) {
+  .radio-group {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.radio-option input[type="radio"] {
+  appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--color-gray);
+  border-radius: 50%;
+  position: relative;
+  cursor: pointer;
+}
+
+.radio-option input[type="radio"]:checked {
+  border-color: var(--color-primary);
+}
+
+.radio-option input[type="radio"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.6rem;
+  height: 0.6rem;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+}
+
+/* ====== Drop Zone ====== */
+.drop-zone {
+  border: 2px dashed var(--color-gray);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  text-align: center;
+  transition: var(--transition-default);
+  cursor: pointer;
+  background-color: var(--color-light);
+  position: relative;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark .drop-zone {
+  background-color: #2A2A2A;
+  border-color: #444;
+}
+
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--color-primary);
+  background-color: rgba(157, 184, 89, 0.1);
+}
+
+.dark .drop-zone:hover, .dark .drop-zone.dragover {
+  background-color: rgba(157, 184, 89, 0.15);
+}
+
+/* ====== Buttons ====== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  transition: var(--transition-default);
+  cursor: pointer;
+  border: none;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: var(--color-light);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-dark);
+}
+
+.dark .btn-primary:hover {
+  background-color: var(--color-primary-light);
+}
+
+.btn-secondary {
+  background-color: var(--color-gray);
+  color: var(--color-dark);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-gray-hover);
+}
+
+.dark .btn-secondary {
+  background-color: #333;
+  color: var(--color-dark);
+}
+
+.dark .btn-secondary:hover {
+  background-color: #444;
+}
+
+.btn-icon {
+  padding: 0.6rem;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+  color: var(--color-light);
+}
+
+.btn-icon:hover {
+  transform: scale(1.05);
+  background-color: var(--color-primary-dark);
+}
+
+.dark .btn-icon:hover {
+  background-color: var(--color-primary-light);
+  color: var(--color-light);
+}
+
+.btn svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.btn-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Action buttons */
+.action-buttons {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+/* Back button */
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-primary);
+  font-weight: 500;
+  padding: 0.5rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  margin-bottom: 1rem;
+  transition: var(--transition-fast);
+}
+
+.back-button:hover {
+  background-color: rgba(91, 101, 41, 0.1);
+}
+
+.dark .back-button {
+  color: var(--color-primary-light);
+}
+
+.dark .back-button:hover {
+  background-color: rgba(157, 184, 89, 0.15);
+}
+
+/* ====== Recording UI ====== */
+.recording-container {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: var(--color-light);
+  border-radius: var(--radius-round);
+  box-shadow: var(--shadow-subtle);
+  width: 100%;
+  max-width: 400px;
+  margin: 1rem auto;
+  transition: var(--transition-default);
+}
+
+.dark .recording-container {
+  background-color: #2A2A2A;
+  border: 1px solid #444;
+}
+
+.recording-waveform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin: 0 0.75rem;
+  flex-grow: 1;
+}
+
+.waveform-bar {
+  width: 3px;
+  height: 12px;
+  margin: 0 2px;
+  background-color: var(--color-primary-light);
+  border-radius: 1px;
+  transition: height 0.2s ease;
+}
+
+.recording-active .waveform-bar {
+  animation: waveform 1.5s ease-in-out infinite;
+}
+
+/* Create different animation delays */
+.waveform-bar:nth-child(1) { animation-delay: 0.0s; }
+.waveform-bar:nth-child(2) { animation-delay: 0.1s; height: 16px; }
+.waveform-bar:nth-child(3) { animation-delay: 0.2s; height: 10px; }
+.waveform-bar:nth-child(4) { animation-delay: 0.3s; height: 18px; }
+.waveform-bar:nth-child(5) { animation-delay: 0.4s; height: 12px; }
+.waveform-bar:nth-child(6) { animation-delay: 0.5s; height: 14px; }
+.waveform-bar:nth-child(7) { animation-delay: 0.6s; height: 20px; }
+.waveform-bar:nth-child(8) { animation-delay: 0.7s; height: 12px; }
+
+.recording-time {
+  font-weight: 500;
+  color: var(--color-primary-dark);
+  min-width: 40px;
+  text-align: center;
+  margin-right: 8px;
+}
+
+.dark .recording-time {
+  color: var(--color-primary-light);
+}
+
+.recording-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Control buttons */
+.control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: transparent;
+  border: none;
+}
+
+.control-btn:hover {
+  transform: scale(1.1);
+}
+
+.play-btn {
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+.play-btn:hover {
+  background-color: rgba(91, 101, 41, 0.1);
+}
+
+.pause-btn {
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.pause-btn:hover {
+  background-color: rgba(220, 38, 38, 0.1);
+}
+
+.submit-btn {
+  background-color: var(--color-primary);
+  color: var(--color-light);
+  padding: 0 14px;
+  border-radius: 16px;
+  width: auto;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.submit-btn:hover {
+  transform: scale(1.03);
+  background-color: var(--color-primary-dark);
+}
+
+.dark .submit-btn:hover {
+  background-color: var(--color-primary-light);
+}
+
+.trash-btn {
+  background-color: #f87171;
+  color: var(--color-light);
+}
+
+.trash-btn:hover {
+  background-color: #ef4444;
+}
+
+/* ====== Enhanced Version Control ====== */
+.version-control {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.version-display {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: rgba(240, 240, 240, 0.5); /* Subtle light background */
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.75rem;
+  box-shadow: var(--shadow-subtle);
+}
+
+.dark .version-display {
+  background-color: rgba(50, 50, 50, 0.6); /* Subtle dark background */
+  border: 1px solid rgba(100, 100, 100, 0.5);
+  color: var(--color-dark);
+}
+
+.version-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333333; /* Dark in light mode */
+}
+
+.dark .version-btn {
+  color: #F0F0F0; /* Light in dark mode */
+}
+
+.version-btn:not(:disabled):hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  transform: scale(1.1);
+}
+
+.dark .version-btn:not(:disabled):hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.version-btn:disabled {
+  color: var(--color-gray);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.version-counter {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #333333; /* Dark in light mode */
+}
+
+.dark .version-counter {
+  color: #F0F0F0; /* Light in dark mode */
+}
+
+/* ====== Waveform Editor ====== */
+.waveform-editor-container {
+  background-color: var(--color-light);
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 0; /* Changed */
+  box-shadow: var(--shadow-subtle);
+  height: 120px;
+}
+
+.dark .waveform-editor-container {
+  background-color: #2A2A2A;
+  border: 1px solid #444;
+}
+
+.waveform-controls {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  z-index: 10;
+}
+
+.waveform-download-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+  background-color: rgba(255, 255, 255, 0.8);
+  color: var(--color-dark);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast);
+  cursor: pointer;
+}
+
+.waveform-download-btn:hover {
+  background-color: rgba(255, 255, 255, 0.9);
+  transform: scale(1.1);
+}
+
+.dark .waveform-download-btn {
+  background-color: rgba(42, 42, 42, 0.8);
+  color: var(--color-dark);
+}
+
+.dark .waveform-download-btn:hover {
+  background-color: rgba(42, 42, 42, 0.9);
+}
+
+/* ====== Text Editors ====== */
+.editor-container {
+  margin-bottom: 3rem;
+}
+
+/* === Claude-style editor interface === */
+/* Redesigned editor wrapper */
+.editor-wrapper {
+  position: relative;
+  margin-top: 1rem; /* UPDATED: reduced from 1.5rem to 1rem */
+  margin-bottom: 1rem; /* UPDATED: reduced from 1.5rem to 1rem */
+  border: 1px solid var(--color-gray);
+  border-radius: var(--radius-md);
+  overflow: hidden; /* Changed to hidden to contain the textarea properly */
+  background-color: var(--color-light); /* Match editor input background */
+  padding: 0; /* ADDED: Ensure no padding inside wrapper */
+}
+
+.dark .editor-wrapper {
+  border-color: #444;
+  background-color: #2A2A2A; /* Match dark mode editor input background */
+}
+
+.text-editor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%; /* ADDED: Ensure full width */
+}
+
+/* Remove borders and match container radius */
+.editor-input {
+  width: 100%;
+  border: none; /* Remove all borders */
+  border-radius: var(--radius-md); /* Match container radius */
+  padding: 1rem 1rem 1rem 1rem; /* Space for dropdown + button */
+  font-size: var(--text-base);
+  background-color: transparent; /* Use container background */
+  color: var(--color-dark);
+  min-height: 100px; /* Consistent height */
+  resize: none; /* UPDATED: Remove resize handle */
+  overflow-y: auto; /* UPDATED: Keep vertical scrolling */
+  overflow-x: hidden; /* UPDATED: Hide horizontal overflow */
+  height: auto; /* ADDED: Let height adjust to content */
+  box-sizing: border-box; /* ADDED: Include padding in size calculations */
+  line-height: 1.5;
+  font-family: inherit;
+  transition: box-shadow 0.2s ease;
+}
+
+.dark .editor-input {
+  color: var(--color-dark);
+  background-color: transparent;
+}
+
+/* Focus state without borders */
+.editor-input:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* Text editor with clear placeholder */
+.editor-input::placeholder {
+  color: #999;
+  opacity: 1;
+}
+
+.dark .editor-input::placeholder {
+  color: #777;
+  opacity: 1;
+}
+
+/* Redesigned dropdown positioned at bottom right */
+.editor-mode-selector {
+  position: absolute;
+  bottom: 12px;
+  right: 50px; /* Position to the left of send button */
+  z-index: 11; /* Increased z-index */
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.editor-mode-selector:hover {
+  opacity: 1;
+}
+
+/* Make dropdown smaller and more subtle */
+.mode-dropdown {
+  position: relative;
+  font-size: 0.75rem; /* Smaller text */
+  width: auto; /* Auto width instead of 100% */
+}
+
+.selected-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background-color: rgba(240, 240, 240, 0.3); /* Very subtle background */
+  cursor: pointer;
+  transition: var(--transition-fast);
+  font-weight: 500;
+  color: #777; /* Subtle gray text */
+  white-space: nowrap;
+  border: none;
+}
+
+.dark .selected-mode {
+  background-color: rgba(60, 60, 60, 0.4);
+  color: #AAA;
+}
+
+.selected-mode:hover {
+  background-color: rgba(240, 240, 240, 0.5);
+}
+
+.dark .selected-mode:hover {
+  background-color: rgba(70, 70, 70, 0.6);
+}
+
+/* Dropdown arrow styling */
+.dropdown-arrow {
+  width: 10px;
+  height: 5px;
+  transition: transform 0.2s ease;
+}
+
+/* Position dropdown menu below */
+.mode-options {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  width: auto;
+  min-width: 160px; /* Fixed width for dropdown */
+  background-color: white;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-medium);
+  border: 1px solid var(--color-gray);
+  overflow: hidden;
+  z-index: 20;
+  transition: var(--transition-fast);
+}
+
+.dark .mode-options {
+  background-color: #333;
+  border-color: #444;
+}
+
+.mode-option {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.mode-option:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark .mode-option:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.mode-name {
+  font-weight: 500;
+  margin-bottom: 0;
+  color: var(--color-dark);
+}
+
+.dark .mode-name {
+  color: var(--color-dark);
+}
+
+.mode-description {
+  font-size: 0.75rem;
+  color: var(--color-dark);
+  opacity: 0.7;
+  display: none; /* Hide descriptions for cleaner look */
+}
+
+.dark .mode-description {
+  color: var(--color-dark);
+  opacity: 0.7;
+}
+
+.mode-options.hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-5px);
+  pointer-events: none;
+}
+
+/* Change send button to minimalist arrow */
+.editor-send-btn {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  background-color: var(--color-primary);
+  color: var(--color-light);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  border: none;
+  padding: 0;
+  z-index: 11; /* Increased z-index */
+}
+
+.editor-send-btn:hover {
+  transform: scale(1.1);
+  background-color: var(--color-primary-dark);
+}
+
+.dark .editor-send-btn {
+  background-color: var(--color-primary);
+}
+
+.dark .editor-send-btn:hover {
+  background-color: var(--color-primary-light);
+}
+
+/* UPDATED: Token editor overlay for proper text wrapping */
+.token-editor-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 1rem 1rem 1rem 1rem; /* Match textarea padding exactly */
+  font-size: var(--text-base);
+  line-height: 1.5;
+  font-family: inherit;
+  color: transparent;
+  overflow: hidden;
+}
+
+/* UPDATED: Token span styling for proper text wrapping */
+.token-span {
+  position: relative;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+  display: inline;
+  white-space: inherit;
+  word-break: inherit;
+  overflow-wrap: inherit;
+}
+
+.token-editor-overlay .token-selected {
+  background-color: rgba(91, 101, 41, 0.2);
+}
+
+.dark .token-editor-overlay .token-selected {
+  background-color: rgba(157, 184, 89, 0.3);
+}
+
+/* ====== Messages ====== */
+.success-message, .error-message {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.success-message {
+  background-color: rgba(157, 184, 89, 0.15);
+  border-left: 4px solid var(--color-primary-light);
+  color: var(--color-primary-dark);
+}
+
+.dark .success-message {
+  background-color: rgba(157, 184, 89, 0.2);
+  color: var(--color-primary-light);
+}
+
+.error-message {
+  background-color: rgba(185, 28, 28, 0.1);
+  border-left: 4px solid var(--color-error);
+  color: var(--color-error);
+}
+
+/* ====== Loading Indicator ====== */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.loading-spinner {
+  border: 3px solid rgba(91, 101, 41, 0.2);
+  border-top: 3px solid var(--color-primary);
+  border-radius: 50%;
+  width: 2.5rem;
+  height: 2.5rem;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+.loading-text {
+  font-size: var(--text-base);
+  color: var(--color-dark);
+  font-weight: 500;
+}
+
+.dark .loading-text {
+  color: var(--color-dark);
+}
+
+/* ====== Helper Classes ====== */
+.hidden {
+  display: none !important;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.mt-4 {
+  margin-top: 1rem;
+}
+
+.mb-4 {
+  margin-bottom: 1rem;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.gap-4 {
+  gap: 1rem;
+}
+
+/* ====== Animation keyframes ====== */
+@keyframes waveform {
+  0%, 100% { transform: scaleY(0.6); }
+  50% { transform: scaleY(1.1); }
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0.5; transform: scale(0.95); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Animation Classes */
+.fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.slide-in {
+  animation: slideIn 0.4s ease-out forwards;
+}
+
+/* ====== Media Queries ====== */
+@media (max-width: 640px) {
+  .card {
+    padding: 1.5rem;
+  }
+  
+  .waveform-editor-container {
+    height: 80px;
+  }
+  
+  .editor-input {
+    min-height: 80px;
+  }
+  
+  .action-buttons {
+    flex-wrap: wrap;
+  }
+  
+  .editor-mode-selector {
+    bottom: 10px;
+    right: 45px;
+  }
+}
+
+/* Fix for edit container spacing */
+#editContainer {
+  margin-top: 1rem;
+}
+
+/* Ensure token text area and overlay match exactly */
+#tokenTextArea, .token-editor-overlay {
+  width: 100%;
+  box-sizing: border-box;
+}

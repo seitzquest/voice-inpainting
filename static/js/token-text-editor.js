@@ -1,6 +1,6 @@
 /**
- * Improved token-text-editor.js with fixes for space handling, duplicate words,
- * and accurate token modification tracking
+ * Improved token-text-editor.js
+ * Enhanced text editor with integrated send button and improved token highlighting
  */
 
 class TokenTextEditor {
@@ -9,7 +9,7 @@ class TokenTextEditor {
         this.options = Object.assign({
             fontSize: '16px',
             lineHeight: 1.5,
-            padding: '12px',
+            padding: '1rem 3rem 1rem 1rem', // Space for send button
             minHeight: '100px',
             selectedTokenClass: 'token-selected',
             modifiedTokenClass: 'token-modified',
@@ -19,6 +19,7 @@ class TokenTextEditor {
         this.editorContainer = null;
         this.textArea = null;
         this.overlay = null;
+        this.sendButton = null;
         
         // Token data
         this.tokens = [];
@@ -40,53 +41,44 @@ class TokenTextEditor {
         // Event callbacks
         this.onSelectionChange = null;
         this.onTextChange = null;
+        this.onSendClick = null;
     }
     
     /**
      * Initialize the text editor
      */
     initialize() {
-        // Create container
-        this.editorContainer = document.createElement('div');
-        this.editorContainer.className = 'token-editor-container';
-        this.container.appendChild(this.editorContainer);
+        if (!this.container) {
+            console.error('Token editor container not found');
+            return;
+        }
         
-        // Create textarea for input
-        this.textArea = document.createElement('textarea');
-        this.textArea.className = 'token-editor-input';
-        this.textArea.style.width = '100%';
-        this.textArea.style.minHeight = this.options.minHeight;
-        this.textArea.style.padding = this.options.padding;
-        this.textArea.style.fontSize = this.options.fontSize;
-        this.textArea.style.lineHeight = this.options.lineHeight;
-        this.textArea.style.border = '1px solid var(--color-gray)';
-        this.textArea.style.borderRadius = 'var(--radius-md)';
-        this.textArea.style.resize = 'vertical';
-        this.textArea.style.fontFamily = 'inherit';
-        this.textArea.style.overflowY = 'auto';
-        this.textArea.style.maxHeight = '300px';
-        this.editorContainer.appendChild(this.textArea);
+        // Always look for the elements directly, don't rely on a specific structure
+        this.textArea = this.container.querySelector('.editor-input');
+        this.overlay = this.container.querySelector('.token-editor-overlay');
+        this.sendButton = this.container.querySelector('.editor-send-btn');
         
-        // Create overlay for token highlighting
-        this.overlay = document.createElement('div');
-        this.overlay.className = 'token-editor-overlay';
-        this.overlay.style.position = 'absolute';
-        this.overlay.style.top = '0';
-        this.overlay.style.left = '0';
-        this.overlay.style.right = '0';
-        this.overlay.style.bottom = '0';
-        this.overlay.style.padding = this.options.padding;
-        this.overlay.style.fontSize = this.options.fontSize;
-        this.overlay.style.lineHeight = this.options.lineHeight;
-        this.overlay.style.pointerEvents = 'none';
-        this.overlay.style.whiteSpace = 'pre-wrap';
-        this.overlay.style.wordBreak = 'break-word';
-        this.overlay.style.overflow = 'hidden';
-        this.overlay.style.color = 'transparent';
-        this.editorContainer.appendChild(this.overlay);
+        if (!this.textArea) {
+            console.error('Text editor input element not found (.editor-input)');
+            return;
+        }
         
-        // Add CSS for token highlighting
-        this.addStyles();
+        if (!this.overlay) {
+            console.error('Token editor overlay element not found (.token-editor-overlay)');
+            // Create the overlay if it doesn't exist
+            this.overlay = document.createElement('div');
+            this.overlay.className = 'token-editor-overlay';
+            this.container.appendChild(this.overlay);
+        }
+        
+        // Add send button click handler if it exists
+        if (this.sendButton) {
+            this.sendButton.addEventListener('click', () => {
+                if (typeof this.onSendClick === 'function') {
+                    this.onSendClick();
+                }
+            });
+        }
         
         // Add event listeners
         this.textArea.addEventListener('input', () => this.handleInput());
@@ -111,49 +103,18 @@ class TokenTextEditor {
     }
     
     /**
-     * Add CSS styles for token highlighting
+     * Set the send button click callback
+     * @param {Function} callback - The callback function
      */
-    addStyles() {
-        const styleEl = document.createElement('style');
-        styleEl.textContent = `
-            .token-span {
-                position: relative;
-                border-radius: 2px;
-                cursor: pointer;
-                transition: background-color 0.2s ease;
-            }
-            
-            .token-editor-overlay .token-selected {
-                background-color: rgba(91, 101, 41, 0.2);
-            }
-            
-            .dark .token-editor-overlay .token-selected {
-                background-color: rgba(157, 184, 89, 0.3);
-            }
-            
-            .token-editor-overlay {
-                overflow-y: auto;
-                max-height: 300px;
-            }
-        `;
-        document.head.appendChild(styleEl);
+    setSendCallback(callback) {
+        this.onSendClick = callback;
     }
     
     /**
      * Update styles for dark mode
      */
     updateDarkModeStyles() {
-        const isDarkMode = document.documentElement.classList.contains('dark');
-        
-        if (isDarkMode) {
-            this.textArea.style.backgroundColor = '#2A2A2A';
-            this.textArea.style.color = '#F0F0F0';
-            this.textArea.style.borderColor = '#444';
-        } else {
-            this.textArea.style.backgroundColor = '#FFFFFF';
-            this.textArea.style.color = '#111111';
-            this.textArea.style.borderColor = '#E5E7EB';
-        }
+        // Dark mode styles are now handled by CSS classes in improved-styles.css
     }
     
     /**
@@ -166,30 +127,34 @@ class TokenTextEditor {
         this.tokens = tokens || [];
         this.originalText = fullText || '';
         
-        // Set textarea value
-        this.textArea.value = this.originalText;
-        this.lastText = this.originalText;
-        
-        // Initialize token tracking
-        this.initializeTokenTracking();
-        
-        // Update overlay
-        this.updateOverlay();
-        
-        // Reset modifications
-        this.modifiedTokens = [];
-        this.previousActiveTokens = [...this.activeTokens];
-        
-        // Notify waveform editor
-        if (this.waveformEditor) {
-            this.waveformEditor.markModifiedTokens([]);
-            this.waveformEditor.draw();
+        // Set textarea value - with error checking
+        if (this.textArea) {
+            this.textArea.value = this.originalText;
+            this.lastText = this.originalText;
+            
+            // Initialize token tracking
+            this.initializeTokenTracking();
+            
+            // Update overlay
+            this.updateOverlay();
+            
+            // Reset modifications
+            this.modifiedTokens = [];
+            this.previousActiveTokens = [...this.activeTokens];
+            
+            // Notify waveform editor
+            if (this.waveformEditor) {
+                this.waveformEditor.markModifiedTokens([]);
+                this.waveformEditor.draw();
+            }
+            
+            // Clear initialization flag after rendering
+            setTimeout(() => {
+                this.isInitializing = false;
+            }, 100);
+        } else {
+            console.error('Cannot set token data: Text area element is not initialized');
         }
-        
-        // Clear initialization flag after rendering
-        setTimeout(() => {
-            this.isInitializing = false;
-        }, 100);
     }
     
     /**
@@ -273,13 +238,16 @@ class TokenTextEditor {
     
     /**
      * Find all positions of a token in text
-     * FIX 1: Improved to handle spaces correctly and work with duplicate words
      * @param {string} text - Text to search in
      * @param {string} tokenText - Token text to find
      * @returns {Array} - Array of {start, end} positions
      */
     findTokenPositions(text, tokenText) {
         const positions = [];
+        
+        if (!text || !tokenText) {
+            return positions;
+        }
         
         // Escape regex special characters but preserve spaces exactly
         const escapedTokenText = this.escapeRegExp(tokenText);
@@ -299,26 +267,30 @@ class TokenTextEditor {
             pattern = `${pattern}(?:$|[^\\w]|\\s+)`;
         }
         
-        // Need to use a global search to find all occurrences
-        const regex = new RegExp(pattern, 'g');
-        let match;
-        
-        while ((match = regex.exec(text)) !== null) {
-            // Adjust the match index and end position to exclude the boundary matchers themselves
-            let startOffset = 0;
-            let endOffset = 0;
+        try {
+            // Need to use a global search to find all occurrences
+            const regex = new RegExp(pattern, 'g');
+            let match;
             
-            if (/^\w/.test(tokenText) && match[0] !== tokenText) {
-                // If there's a boundary prefix, calculate its length
-                startOffset = match[0].indexOf(tokenText);
-                // Adjust the regex index for future matches
-                regex.lastIndex = match.index + startOffset + tokenText.length;
+            while ((match = regex.exec(text)) !== null) {
+                // Adjust the match index and end position to exclude the boundary matchers themselves
+                let startOffset = 0;
+                let endOffset = 0;
+                
+                if (/^\w/.test(tokenText) && match[0] !== tokenText) {
+                    // If there's a boundary prefix, calculate its length
+                    startOffset = match[0].indexOf(tokenText);
+                    // Adjust the regex index for future matches
+                    regex.lastIndex = match.index + startOffset + tokenText.length;
+                }
+                
+                positions.push({
+                    start: match.index + startOffset,
+                    end: match.index + startOffset + tokenText.length
+                });
             }
-            
-            positions.push({
-                start: match.index + startOffset,
-                end: match.index + startOffset + tokenText.length
-            });
+        } catch (error) {
+            console.error('Error in token position lookup:', error);
         }
         
         return positions;
@@ -334,6 +306,8 @@ class TokenTextEditor {
      * @returns {Object} - Context object with before/after text
      */
     getTokenContext(text, start, end, contextSize = 20) {
+        if (!text) return { before: '', after: '' };
+        
         const beforeStart = Math.max(0, start - contextSize);
         const afterEnd = Math.min(text.length, end + contextSize);
         
@@ -350,6 +324,8 @@ class TokenTextEditor {
      * @returns {number} - Similarity score
      */
     calculateContextSimilarity(context1, context2) {
+        if (!context1 || !context2) return 0;
+        
         // Calculate similarity scores for before and after contexts
         let beforeSimilarity = 0;
         let afterSimilarity = 0;
@@ -393,10 +369,15 @@ class TokenTextEditor {
      * Update the overlay with token spans
      */
     updateOverlay() {
+        if (!this.overlay || !this.textArea) {
+            console.warn('Cannot update overlay: overlay or textArea element is missing');
+            return;
+        }
+        
         // Create a new overlay with marked spans
         let html = '';
         let currentPosition = 0;
-        const text = this.textArea.value;
+        const text = this.textArea.value || '';
         
         // Sort active tokens by position for consistent rendering
         this.activeTokens.sort((a, b) => a.start - b.start);
@@ -425,8 +406,8 @@ class TokenTextEditor {
             
             html += `<span id="${spanId}" class="${tokenClasses.join(' ')}" 
                 data-token-idx="${token.tokenIdx}" 
-                data-start-time="${originalToken?.start_time.toFixed(3) || 0}" 
-                data-end-time="${originalToken?.end_time.toFixed(3) || 0}"
+                data-start-time="${originalToken?.start_time?.toFixed(3) || 0}" 
+                data-end-time="${originalToken?.end_time?.toFixed(3) || 0}"
                 data-original-text="${this.escapeHtml(tokenText)}"
                 onclick="(function(e) { e.stopPropagation(); })(event)">${this.escapeHtml(tokenText)}</span>`;
             
@@ -482,6 +463,8 @@ class TokenTextEditor {
      * @returns {string} - Escaped text
      */
     escapeHtml(text) {
+        if (typeof text !== 'string') return '';
+        
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
@@ -493,6 +476,7 @@ class TokenTextEditor {
      * @returns {string} - Escaped string for regex
      */
     escapeRegExp(string) {
+        if (typeof string !== 'string') return '';
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
     
@@ -500,7 +484,8 @@ class TokenTextEditor {
      * Handle input events
      */
     handleInput() {
-        if (this.isProcessingChange || this.isInitializing) return;
+        if (this.isProcessingChange || this.isInitializing || !this.textArea) return;
+        
         this.isProcessingChange = true;
         
         // Store previous active tokens before updating
@@ -531,10 +516,11 @@ class TokenTextEditor {
     
     /**
      * Update token tracking after text edit
-     * FIX 2: Improved to correctly handle duplicate words using position history and change detection
      */
     updateTokenTracking() {
-        const currentText = this.textArea.value;
+        if (!this.textArea) return;
+        
+        const currentText = this.textArea.value || '';
         
         // Start fresh with active tokens
         this.activeTokens = [];
@@ -826,7 +812,8 @@ class TokenTextEditor {
      * Handle selection change events
      */
     handleSelectionChange() {
-        if (this.isProcessingChange) return;
+        if (this.isProcessingChange || !this.textArea) return;
+        
         this.isProcessingChange = true;
         
         const selectionStart = this.textArea.selectionStart;
@@ -874,27 +861,91 @@ class TokenTextEditor {
      * @returns {string} - Current text
      */
     getText() {
-        return this.textArea.value;
+        return this.textArea ? this.textArea.value : '';
+    }
+    
+    /**
+     * Get modifications as edit operations for the API
+     * @returns {Array} - Array of edit operations
+     */
+    getEditOperations() {
+        if (!this.textArea) return [];
+        
+        const editOperations = [];
+        const currentText = this.textArea.value || '';
+        
+        // If no modified tokens, return empty array
+        if (this.modifiedTokens.length === 0) {
+            return editOperations;
+        }
+        
+        // Group adjacent modified tokens
+        const groups = this.groupAdjacentModifiedTokens();
+        
+        // Process each group
+        for (const group of groups) {
+            const tokenIndices = group.tokenIndices;
+            
+            // Get token metadata from the original tokens
+            const tokenData = tokenIndices
+                .map(idx => {
+                    const originalToken = this.originalTokens.find(t => t.tokenIdx === idx);
+                    
+                    // Look up the actual token for time data
+                    const token = this.tokens.find(t => t.token_idx === idx);
+                    
+                    return {
+                        tokenIdx: idx,
+                        originalText: originalToken?.text || '',
+                        start_time: token?.start_time || 0,
+                        end_time: token?.end_time || 0
+                    };
+                })
+                .filter(t => t !== null)
+                .sort((a, b) => a.start_time - b.start_time);
+            
+            if (tokenData.length === 0) continue;
+            
+            // Build original text using the transcript-based method
+            // This preserves exact spacing from the original transcript
+            const originalText = this.buildOriginalTextFromTranscript(
+                tokenIndices, 
+                this.originalText
+            );
+            
+            // Find what text has replaced these tokens
+            const editedText = this.inferEditedTextForTokens(tokenIndices, currentText);
+            
+            // Create edit operation with accurate original text (preserving spaces)
+            editOperations.push({
+                original_text: originalText,
+                edited_text: editedText,
+                start_token_idx: tokenData[0].tokenIdx,
+                end_token_idx: tokenData[tokenData.length - 1].tokenIdx + 1
+            });
+        }
+        
+        return editOperations;
     }
     
     /**
      * Build original text from transcript text, preserving exact spacing
-     * @param {Array} tokenData - Array of token data {tokenIdx, text, etc.}
+     * @param {Array} tokenIndices - Array of token indices
      * @param {string} transcript - Full transcript text
      * @returns {string} - Original text extracted from transcript
      */
-    buildOriginalTextFromTranscript(tokenData, transcript) {
-        if (!tokenData || tokenData.length === 0 || !transcript) {
+    buildOriginalTextFromTranscript(tokenIndices, transcript) {
+        if (!tokenIndices || tokenIndices.length === 0 || !transcript) {
             return '';
         }
         
         // Get the start and end times from tokens
-        const startTime = Math.min(...tokenData.map(t => {
+        const startTime = Math.min(...tokenIndices.map(t => {
             const token = this.tokens.find(tk => tk.token_idx === t);
             return token ? token.start_time : Infinity;
         }));
         
-        const endTime = Math.max(...tokenData.map(t => {
+        const endTime = Math.max(...tokenIndices.map(t => {
             const token = this.tokens.find(tk => tk.token_idx === t);
             return token ? token.end_time : 0;
         }));
@@ -936,7 +987,7 @@ class TokenTextEditor {
         let prevTokenEnd = -1;
         
         // Sort token data by time to ensure correct order
-        const timeOrderedTokens = [...tokenData].sort((a, b) => {
+        const timeOrderedTokens = [...tokenIndices].sort((a, b) => {
             const tokenA = this.tokens.find(t => t.token_idx === a);
             const tokenB = this.tokens.find(t => t.token_idx === b);
             return tokenA && tokenB ? tokenA.start_time - tokenB.start_time : 0;
@@ -995,75 +1046,14 @@ class TokenTextEditor {
     }
     
     /**
-     * Get modifications as edit operations for the API
-     * IMPROVED: Uses buildOriginalTextFromTranscript for more accurate text extraction
-     * @returns {Array} - Array of edit operations
-     */
-    getEditOperations() {
-        const editOperations = [];
-        const currentText = this.textArea.value;
-        
-        // If no modified tokens, return empty array
-        if (this.modifiedTokens.length === 0) {
-            return editOperations;
-        }
-        
-        // Group adjacent modified tokens
-        const groups = this.groupAdjacentModifiedTokens();
-        
-        // Process each group
-        for (const group of groups) {
-            const tokenIndices = group.tokenIndices;
-            
-            // Get token metadata from the original tokens
-            const tokenData = tokenIndices
-                .map(idx => {
-                    const originalToken = this.originalTokens.find(t => t.tokenIdx === idx);
-                    
-                    // Look up the actual token for time data
-                    const token = this.tokens.find(t => t.token_idx === idx);
-                    
-                    return {
-                        tokenIdx: idx,
-                        originalText: originalToken?.text || '',
-                        start_time: token?.start_time || 0,
-                        end_time: token?.end_time || 0
-                    };
-                })
-                .filter(t => t !== null)
-                .sort((a, b) => a.start_time - b.start_time);
-            
-            if (tokenData.length === 0) continue;
-            
-            // Build original text using the transcript-based method
-            // This preserves exact spacing from the original transcript
-            const originalText = this.buildOriginalTextFromTranscript(
-                tokenIndices, 
-                this.originalText
-            );
-            
-            // Find what text has replaced these tokens
-            const editedText = this.inferEditedTextForTokens(tokenIndices, currentText);
-            
-            // Create edit operation with accurate original text (preserving spaces)
-            editOperations.push({
-                original_text: originalText,
-                edited_text: editedText,
-                start_token_idx: tokenData[0].tokenIdx,
-                end_token_idx: tokenData[tokenData.length - 1].tokenIdx + 1
-            });
-        }
-        
-        return editOperations;
-    }
-    
-    /**
      * Infer edited text for a group of modified tokens
      * @param {Array} modifiedTokenIndices - Array of modified token indices
      * @param {string} currentText - Current text in the text area
      * @returns {string} - Edited text inferred from the current text
      */
     inferEditedTextForTokens(modifiedTokenIndices, currentText) {
+        if (!currentText) return '';
+        
         // Sort original tokens by their position
         const sortedOriginalTokens = [...this.originalTokens].sort((a, b) => a.start - b.start);
         
@@ -1243,11 +1233,6 @@ class TokenTextEditor {
      * Clean up resources
      */
     cleanup() {
-        // Remove DOM elements
-        if (this.editorContainer && this.editorContainer.parentNode) {
-            this.editorContainer.parentNode.removeChild(this.editorContainer);
-        }
-        
         // Clear data
         this.tokens = [];
         this.selectedTokens = [];
@@ -1255,6 +1240,14 @@ class TokenTextEditor {
         this.originalTokens = [];
         this.activeTokens = [];
         this.previousActiveTokens = [];
+        
+        // Keep DOM elements intact for reuse, just reset the textarea
+        if (this.textArea) {
+            this.textArea.value = '';
+        }
+        if (this.overlay) {
+            this.overlay.innerHTML = '';
+        }
     }
 }
 
