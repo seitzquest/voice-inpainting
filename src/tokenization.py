@@ -198,15 +198,18 @@ class AudioTokenizer:
         if os.path.exists(audio_path):
             # Use whisper_timestamped.transcribe instead
             whisper_result = whisper_timestamped.transcribe(
-                model=self.whisper_model, audio=audio_path, language="en"
+                model=self.whisper_model, audio=audio_path
             )
         else:
             # Create a temporary file to use with whisper_timestamped
             temp_path = "/tmp/temp_whisper_input.wav"
             torchaudio.save(temp_path, waveform, self.sample_rate)
             whisper_result = whisper_timestamped.transcribe(
-                model=self.whisper_model, audio=temp_path, language="en"
+                model=self.whisper_model, audio=temp_path
             )
+
+        if whisper_result["language"] != "en":
+            logger.warning(f"Models are not optimized for detected language '{whisper_result["language"]}'.")
 
         # Clean up temporary file if created
         if temp_path and os.path.exists(temp_path):
