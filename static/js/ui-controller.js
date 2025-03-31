@@ -1,6 +1,6 @@
 /**
  * ui-controller.js
- * Enhanced UI controller with integrated audio handling
+ * Enhanced UI controller with integrated audio handling and improved version management
  */
 
 class UIController {
@@ -87,12 +87,18 @@ class UIController {
             transcribedText: null,
             waveformEditor: null,
             tokenTextEditor: null,
-            versionHistory: [],
-            currentVersionIndex: -1,
             processingState: {
                 tokenizationInProgress: false,
                 processingInProgress: false,
                 cancelled: false
+            },
+            
+            // Version tracking for modifications and generations
+            versionData: {
+                currentVersionIndex: -1,
+                versions: [], // Will store complete version data including audio, transcript, tokens, etc.
+                modifications: [], // Tracks all modifications across versions by token index
+                generations: [] // Tracks all generated regions across versions
             }
         };
 
@@ -204,6 +210,17 @@ class UIController {
             this.elements.previewPlayer.addEventListener('ended', () => this.resetPlayButton());
         }
         
+        // Add ended event to main audio player
+        if (this.elements.audioPlayer) {
+            this.elements.audioPlayer.addEventListener('ended', () => {
+                // Reset waveform playhead when audio ends
+                if (this.state.waveformEditor) {
+                    this.state.waveformEditor.stopPlayheadAnimation();
+                    this.state.waveformEditor.drawPlayhead();
+                }
+            });
+        }
+        
         console.log('UI Controller initialized');
     }
     
@@ -309,10 +326,11 @@ class UIController {
     }
     
     /**
-     * Select edit mode and update UI
+     * Enhanced selection of edit mode with option to prevent retokenization
      * @param {string} mode - Edit mode ('manual' or 'prompt')
+     * @param {boolean} silent - Whether to prevent automatic tokenization
      */
-    selectEditMode(mode) {
+    selectEditMode(mode, silent = false) {
         // Update state
         const previousMode = this.state.editMode;
         this.state.editMode = mode;
@@ -340,7 +358,7 @@ class UIController {
             this.elements.manualEditorContainer.classList.remove('hidden');
             
             // Initialize manual editor if we have audio but no token data
-            if (this.state.audioBlob && !this.state.tokenData) {
+            if (this.state.audioBlob && !this.state.tokenData && !silent) {
                 this.tokenizeAudio();
             } else if (this.state.tokenData && this.state.transcribedText) {
                 this.buildManualEditor(true); // Preserve highlights when switching modes
@@ -356,6 +374,32 @@ class UIController {
         const currentModeText = document.getElementById('currentEditMode');
         if (currentModeText) {
             currentModeText.textContent = mode === 'manual' ? 'Manual Editing' : 'Prompt-Based';
+        }
+        
+        // Sync the mode dropdowns
+        this.syncEditModeDropdowns();
+    }
+    
+    /**
+     * Keep edit mode dropdowns in sync
+     */
+    syncEditModeDropdowns() {
+        // Update manual editor dropdown
+        const manualDropdown = document.getElementById('editModeSelector');
+        if (manualDropdown) {
+            const manualModeText = manualDropdown.querySelector('span');
+            if (manualModeText) {
+                manualModeText.textContent = this.state.editMode.charAt(0).toUpperCase() + this.state.editMode.slice(1);
+            }
+        }
+        
+        // Update prompt editor dropdown
+        const promptDropdown = document.getElementById('promptModeSelector');
+        if (promptDropdown) {
+            const promptModeText = promptDropdown.querySelector('span');
+            if (promptModeText) {
+                promptModeText.textContent = this.state.editMode.charAt(0).toUpperCase() + this.state.editMode.slice(1);
+            }
         }
     }
     
@@ -412,9 +456,13 @@ class UIController {
         this.state.transcribedText = null;
         this.state.audioBlob = null;
         
-        // Reset version history
-        this.state.versionHistory = [];
-        this.state.currentVersionIndex = -1;
+        // Reset version data
+        this.state.versionData = {
+            currentVersionIndex: -1,
+            versions: [],
+            modifications: [],
+            generations: []
+        };
         
         // Reset file upload
         if (this.elements.fileUpload) {
@@ -452,7 +500,7 @@ class UIController {
         this.elements.editContainer.classList.remove('hidden');
         
         // Show version control if we have history
-        if (this.state.versionHistory.length > 0) {
+        if (this.state.versionData.versions.length > 0) {
             this.elements.versionControlContainer.classList.remove('hidden');
             this.updateVersionDisplay();
         }
@@ -483,7 +531,7 @@ class UIController {
         if (!this.state.audioBlob) return;
         
         // Show loading
-        this.showLoading(true);
+        this.showLoading(true, 'Processing audio...');
         
         // Set processing state
         this.state.processingState.tokenizationInProgress = true;
@@ -539,9 +587,25 @@ class UIController {
             if (this.state.waveformEditor.generatedRegions) {
                 generatedRegions = [...this.state.waveformEditor.generatedRegions];
             }
-        } else if (this.state.currentVersionIndex >= 0 && this.state.versionHistory[this.state.currentVersionIndex]) {
-            // Get generated regions from version history
-            generatedRegions = this.state.versionHistory[this.state.currentVersionIndex].generatedRegions || [];
+        } else if (this.state.versionData.currentVersionIndex >= 0) {
+            // Version-specific processing
+            // Get the version we're viewing
+            const version = this.state.versionData.versions[this.state.versionData.currentVersionIndex];
+            
+            // For generations, show only those from this specific version
+            generatedRegions = this.getGeneratedRegionsForVersion(this.state.versionData.currentVersionIndex);
+            
+            // For modifications, handle based on which version we're viewing
+            if (this.state.versionData.currentVersionIndex === this.state.versionData.versions.length - 1) {
+                // Latest version - show its own modifications
+                modifiedTokens = version.modifiedTokens || [];
+            } else {
+                // Older version - show modifications from later versions
+                modifiedTokens = this.getModifiedTokensForOlderVersion(this.state.versionData.currentVersionIndex);
+            }
+            
+            // Use version's selected tokens
+            selectedTokens = version.selectedTokens || [];
         }
         
         // Initialize waveform if needed
@@ -575,7 +639,7 @@ class UIController {
             this.state.waveformEditor.setTokenData(this.state.tokenData);
             
             // Restore selections and generated regions
-            if (preserveHighlights || generatedRegions.length > 0) {
+            if (preserveHighlights || generatedRegions.length > 0 || modifiedTokens.length > 0) {
                 this.state.waveformEditor.selectTokens(selectedTokens);
                 this.state.waveformEditor.markModifiedTokens(modifiedTokens);
                 this.state.waveformEditor.markGeneratedRegions(generatedRegions);
@@ -619,6 +683,14 @@ class UIController {
         // Store audio blob
         this.state.audioBlob = audioBlob;
         
+        // Reset version data
+        this.state.versionData = {
+            currentVersionIndex: -1,
+            versions: [],
+            modifications: [],
+            generations: []
+        };
+        
         // Create URL for audio player
         if (this.elements.audioPlayer.src) {
             URL.revokeObjectURL(this.elements.audioPlayer.src);
@@ -626,120 +698,280 @@ class UIController {
         this.elements.audioPlayer.src = URL.createObjectURL(audioBlob);
         
         // Add to version history (first entry is original audio)
-        this.addToVersionHistory(audioBlob, 'Original');
+        this.addToVersionHistory(audioBlob, 'Original', [], {
+            changeType: 'original'
+        });
         
         // Go to edit step
         this.goToStep(2);
     }
     
     /**
-     * Add current audio to version history
+     * Add current audio to version history with enhanced metadata and proper token tracking
      * @param {Blob} audioBlob - Audio blob to add to history
      * @param {string} label - Label to describe this version
-     * @param {Array} generatedRegions - Regions of generated audio
+     * @param {Array} generatedRegions - Regions of generated audio in this specific version
+     * @param {Object} options - Additional version metadata
      */
-    addToVersionHistory(audioBlob, label = 'Edit', generatedRegions = []) {
+    addToVersionHistory(audioBlob, label = 'Edit', generatedRegions = [], options = {}) {
         // Create a copy of the blob
         const blobCopy = audioBlob.slice(0, audioBlob.size, audioBlob.type);
         
         // If we've navigated back in history and then made a change,
         // remove all versions after the current one
-        if (this.state.currentVersionIndex < this.state.versionHistory.length - 1) {
-            this.state.versionHistory = this.state.versionHistory.slice(0, this.state.currentVersionIndex + 1);
+        if (this.state.versionData.currentVersionIndex < this.state.versionData.versions.length - 1) {
+            // Keep only versions up to and including the current version
+            this.state.versionData.versions = this.state.versionData.versions.slice(0, this.state.versionData.currentVersionIndex + 1);
+            
+            // Remove modifications made in later versions (that we're discarding)
+            if (this.state.versionData.modifications.length > 0) {
+                // Only keep modifications that were made up to current version
+                const currentVersion = this.state.versionData.versions[this.state.versionData.currentVersionIndex];
+                if (currentVersion && currentVersion.modifiedTokens) {
+                    // Reset modifications to only those that exist in the current version
+                    this.state.versionData.modifications = [...currentVersion.modifiedTokens];
+                } else {
+                    this.state.versionData.modifications = [];
+                }
+            }
+            
+            // Also clear generations from later versions
+            if (this.state.versionData.generations.length > 0) {
+                // Filter generations to only keep those from versions we're keeping
+                this.state.versionData.generations = this.state.versionData.generations.filter(region => {
+                    return region.versionIndex <= this.state.versionData.currentVersionIndex;
+                });
+            }
         }
         
-        // Add to history
-        this.state.versionHistory.push({
+        // Use provided token data or current state
+        const tokenData = options.tokenData ? 
+            JSON.parse(JSON.stringify(options.tokenData)) : 
+            (this.state.tokenData ? JSON.parse(JSON.stringify(this.state.tokenData)) : null);
+        
+        // Use provided transcript or current state
+        const transcribedText = options.transcribedText || this.state.transcribedText;
+        
+        // Get modified tokens from either options or current state
+        const modifiedTokens = options.modifiedTokens || 
+            (this.state.tokenTextEditor ? this.state.tokenTextEditor.modifiedTokens : []);
+        
+        // Get selected tokens if available
+        const selectedTokens = options.selectedTokens || 
+            (this.state.tokenTextEditor ? this.state.tokenTextEditor.selectedTokens : []);
+        
+        // Track modifications across all versions
+        if (modifiedTokens && modifiedTokens.length > 0) {
+            // Add all new modifications to the list
+            for (const tokenIdx of modifiedTokens) {
+                if (!this.state.versionData.modifications.includes(tokenIdx)) {
+                    this.state.versionData.modifications.push(tokenIdx);
+                }
+            }
+        }
+        
+        // Track generations with version index
+        if (generatedRegions && generatedRegions.length > 0) {
+            // Mark each generated region with the version index it was created in
+            const newVersionIndex = this.state.versionData.versions.length;
+            
+            // Add version index to each generated region for tracking
+            const versionedGeneratedRegions = generatedRegions.map(region => {
+                return {
+                    ...region,
+                    versionIndex: newVersionIndex
+                };
+            });
+            
+            // Add to the global generations list
+            this.state.versionData.generations = [
+                ...this.state.versionData.generations,
+                ...versionedGeneratedRegions
+            ];
+        }
+        
+        // Create complete version entry with all necessary data
+        const versionEntry = {
+            // Audio data
             audioBlob: blobCopy,
+            
+            // Metadata
             label: label,
             timestamp: new Date(),
             editMode: this.state.editMode,
-            tokenData: this.state.tokenData ? JSON.parse(JSON.stringify(this.state.tokenData)) : null,
-            transcribedText: this.state.transcribedText,
-            generatedRegions: generatedRegions
-        });
+            changeType: options.changeType || 'edit',
+            
+            // Complete transcript and token data
+            tokenData: tokenData,
+            transcribedText: transcribedText,
+            
+            // Version-specific edits
+            versionGeneratedRegions: generatedRegions || [],  // Regions generated in THIS version
+            modifiedTokens: modifiedTokens || [],  // Tokens modified in THIS version
+            selectedTokens: selectedTokens || [],  // Selected tokens at time of save
+            
+            // Complete modification lists (for rendering when viewing this version)
+            allModifiedTokens: [...this.state.versionData.modifications],  // All modifications up to this version
+            
+            // Index for reference
+            versionIndex: this.state.versionData.versions.length
+        };
+        
+        // Add to version history
+        this.state.versionData.versions.push(versionEntry);
         
         // Update current index
-        this.state.currentVersionIndex = this.state.versionHistory.length - 1;
+        this.state.versionData.currentVersionIndex = this.state.versionData.versions.length - 1;
         
         // Update state audio blob
         this.state.audioBlob = blobCopy;
         
-        // Update audio player
+        // Update audio player (always pause when changing versions)
         if (this.elements.audioPlayer.src) {
             URL.revokeObjectURL(this.elements.audioPlayer.src);
         }
         this.elements.audioPlayer.src = URL.createObjectURL(blobCopy);
+        this.elements.audioPlayer.pause();
         
         // Show version control
         this.elements.versionControlContainer.classList.remove('hidden');
         this.updateVersionDisplay();
         
-        // Update waveform with generated regions
-        if (this.state.waveformEditor && generatedRegions.length > 0) {
-            this.state.waveformEditor.markGeneratedRegions(generatedRegions);
-        }
+        // Update state with the current data
+        this.state.tokenData = tokenData;
+        this.state.transcribedText = transcribedText;
         
-        // If in manual mode, retokenize audio
+        // FIXED LOGIC: For manual mode, either tokenize or build the editor
         if (this.state.editMode === 'manual') {
-            // Reset token data to force re-tokenization
-            this.state.tokenData = null;
-            this.state.transcribedText = null;
-            this.tokenizeAudio();
+            if (!tokenData) {
+                // Reset token data to force re-tokenization
+                this.state.tokenData = null;
+                this.state.transcribedText = null;
+                // tokenizeAudio will call buildManualEditor when it completes
+                this.tokenizeAudio();
+            } else {
+                // We have token data, so build manual editor directly
+                this.buildManualEditor(true);
+            }
         }
     }
     
     /**
-     * Update version display
+     * Update version display with enhanced information
      */
     updateVersionDisplay() {
-        if (this.state.versionHistory.length === 0) {
-            this.elements.versionDisplay.textContent = 'Original';
+        if (!this.elements.versionDisplay) return;
+        
+        if (this.state.versionData.versions.length === 0) {
+            this.elements.versionDisplay.innerHTML = '<div class="version-info">Original</div>';
             this.elements.previousVersionButton.disabled = true;
             this.elements.nextVersionButton.disabled = true;
             return;
         }
         
-        // Update version counter
-        this.elements.versionDisplay.textContent = 
-            `Version ${this.state.currentVersionIndex + 1}/${this.state.versionHistory.length}`;
-        
         // Update button states
-        this.elements.previousVersionButton.disabled = (this.state.currentVersionIndex <= 0);
-        this.elements.nextVersionButton.disabled = (this.state.currentVersionIndex >= this.state.versionHistory.length - 1);
+        this.elements.previousVersionButton.disabled = (this.state.versionData.currentVersionIndex <= 0);
+        this.elements.nextVersionButton.disabled = (this.state.versionData.currentVersionIndex >= this.state.versionData.versions.length - 1);
+        
+        const version = this.state.versionData.versions[this.state.versionData.currentVersionIndex];
+        
+        // Create a more detailed version label
+        let versionType = '';
+        if (this.state.versionData.currentVersionIndex === 0) {
+            versionType = 'Original';
+        } else if (version.changeType === 'manual-edit') {
+            versionType = 'Manual Edit';
+        } else if (version.changeType === 'prompt-edit') {
+            versionType = 'Prompt Edit';
+        } else {
+            versionType = 'Edit';
+        }
+        
+        // Create time string (eg. "2m ago" or "10:45 AM")
+        const timeString = this.getTimeString(version.timestamp);
+        
+        // Create tooltip with more details
+        const tooltipContent = version.label || (versionType === 'Original' ? 'Original audio' : 'Edit');
+        
+        // Update the display with enhanced structure
+        this.elements.versionDisplay.innerHTML = `
+            <div class="version-tooltip">${tooltipContent}</div>
+            <div class="version-info">
+                <span class="version-number">${this.state.versionData.currentVersionIndex + 1}/${this.state.versionData.versions.length}</span>
+                <span class="version-type">${versionType}</span>
+                <span class="version-time">${timeString}</span>
+            </div>
+        `;
+    }
+    
+    /**
+     * Helper function to format time for version display
+     * @param {Date} timestamp - Timestamp to format
+     * @returns {string} - Formatted time string
+     */
+    getTimeString(timestamp) {
+        if (!timestamp) return '';
+        
+        const now = new Date();
+        const diff = now - timestamp;
+        
+        // If less than an hour, show minutes ago
+        if (diff < 60 * 60 * 1000) {
+            const mins = Math.floor(diff / (60 * 1000));
+            return `${mins}m ago`;
+        }
+        
+        // If today, show time
+        if (timestamp.toDateString() === now.toDateString()) {
+            return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        // Otherwise show date
+        return timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
     
     /**
      * Navigate to previous version
      */
     navigateToPreviousVersion() {
-        if (this.state.currentVersionIndex <= 0) return;
+        if (this.state.versionData.currentVersionIndex <= 0) return;
         
-        this.state.currentVersionIndex--;
-        this.loadVersionAtIndex(this.state.currentVersionIndex);
+        this.loadVersionAtIndex(this.state.versionData.currentVersionIndex - 1);
     }
     
     /**
      * Navigate to next version
      */
     navigateToNextVersion() {
-        if (this.state.currentVersionIndex >= this.state.versionHistory.length - 1) return;
+        if (this.state.versionData.currentVersionIndex >= this.state.versionData.versions.length - 1) return;
         
-        this.state.currentVersionIndex++;
-        this.loadVersionAtIndex(this.state.currentVersionIndex);
+        this.loadVersionAtIndex(this.state.versionData.currentVersionIndex + 1);
     }
     
     /**
-     * Load version at specific index
+     * Load version at specific index with improved token rendering
      * @param {number} index - Index in version history
      */
     loadVersionAtIndex(index) {
-        if (index < 0 || index >= this.state.versionHistory.length) return;
+        if (index < 0 || index >= this.state.versionData.versions.length) return;
         
-        const version = this.state.versionHistory[index];
+        // Always pause audio when changing versions
+        if (this.elements.audioPlayer) {
+            this.elements.audioPlayer.pause();
+        }
         
-        // Update current audio blob
+        // If waveform editor is initialized, reset its playback state
+        if (this.state.waveformEditor) {
+            this.state.waveformEditor.resetPlayback();
+        }
+        
+        const version = this.state.versionData.versions[index];
+
+        // Update current state from the stored version
         this.state.audioBlob = version.audioBlob;
+        this.state.tokenData = version.tokenData ? JSON.parse(JSON.stringify(version.tokenData)) : null;
+        this.state.transcribedText = version.transcribedText;
+        this.state.editMode = version.editMode || 'manual';
         
         // Update audio player
         if (this.elements.audioPlayer.src) {
@@ -747,31 +979,119 @@ class UIController {
         }
         this.elements.audioPlayer.src = URL.createObjectURL(version.audioBlob);
         
-        // Update token data if available
-        this.state.tokenData = version.tokenData;
-        this.state.transcribedText = version.transcribedText;
-        
-        // Switch to the edit mode used for this version
-        if (version.editMode) {
-            this.selectEditMode(version.editMode);
-        }
-        
         // Update version display
+        this.state.versionData.currentVersionIndex = index;
         this.updateVersionDisplay();
         
-        // Rebuild editor if in manual mode
+        // Update UI for correct edit mode
+        this.selectEditMode(this.state.editMode, true); // Pass silent=true to avoid tokenizing again
+        
+        // Rebuild editor with the version's state
         if (this.state.editMode === 'manual' && this.state.tokenData) {
-            this.buildManualEditor(true); // true = preserveHighlights
+            this.buildManualEditor(true); // preserveHighlights = true
             
-            // Apply generated regions from version history
-            if (this.state.waveformEditor && version.generatedRegions) {
-                this.state.waveformEditor.markGeneratedRegions(version.generatedRegions);
+            // Apply stored highlights, modifications, etc.
+            if (this.state.waveformEditor) {
+                // Determine what to show based on which version we're viewing:
+                
+                // 1. Show generated regions FOR THIS VERSION ONLY
+                const generatedRegionsForThisVersion = this.getGeneratedRegionsForVersion(index);
+                this.state.waveformEditor.markGeneratedRegions(generatedRegionsForThisVersion);
+                
+                // 2. Show modified tokens - changes made in this version plus changes in later versions
+                //    if viewing an older version
+                let modifiedTokens = [];
+                
+                if (index === this.state.versionData.versions.length - 1) {
+                    // For the latest version, just show its own modifications
+                    modifiedTokens = [...version.modifiedTokens];
+                } else {
+                    // For older versions, show modifications made in later versions
+                    modifiedTokens = this.getModifiedTokensForOlderVersion(index);
+                }
+                
+                this.state.waveformEditor.markModifiedTokens(modifiedTokens);
+                
+                // 3. Apply selected tokens
+                if (version.selectedTokens && version.selectedTokens.length > 0) {
+                    this.state.waveformEditor.selectTokens(version.selectedTokens);
+                }
+            }
+            
+            // Apply to text editor
+            if (this.state.tokenTextEditor) {
+                // Update text
+                if (version.transcribedText) {
+                    this.state.tokenTextEditor.setTokenData(version.tokenData, version.transcribedText);
+                }
+                
+                // Apply selected tokens
+                if (version.selectedTokens && version.selectedTokens.length > 0) {
+                    this.state.tokenTextEditor.selectedTokens = [...version.selectedTokens];
+                    this.state.tokenTextEditor.updateOverlay();
+                }
+                
+                // Set modified tokens for proper highlighting
+                if (version.modifiedTokens && version.modifiedTokens.length > 0) {
+                    this.state.tokenTextEditor.modifiedTokens = [...version.modifiedTokens];
+                }
             }
         }
     }
     
     /**
-     * Process manual edits
+     * Get generated regions specific to a particular version
+     * @param {number} versionIndex - The version index to get regions for
+     * @returns {Array} - Array of generated regions for this version
+     */
+    getGeneratedRegionsForVersion(versionIndex) {
+        if (versionIndex < 0 || versionIndex >= this.state.versionData.versions.length) {
+            return [];
+        }
+        
+        // If we're looking at the current version, return its generated regions
+        const version = this.state.versionData.versions[versionIndex];
+        if (version && version.versionGeneratedRegions) {
+            return [...version.versionGeneratedRegions];
+        }
+        
+        // Filter generations to only those from the specific version
+        return this.state.versionData.generations.filter(region => {
+            return region.versionIndex === versionIndex;
+        });
+    }
+    
+    /**
+     * Get tokens that were modified in versions after the current one
+     * This is used to show red highlighting on older versions
+     * @param {number} versionIndex - The version index to get modifications for
+     * @returns {Array} - Array of token indices modified in later versions
+     */
+    getModifiedTokensForOlderVersion(versionIndex) {
+        if (versionIndex < 0 || versionIndex >= this.state.versionData.versions.length - 1) {
+            return [];
+        }
+        
+        // Get all tokens modified after this version
+        const laterModifiedTokens = [];
+        
+        // Collect all modified tokens from later versions
+        for (let i = versionIndex + 1; i < this.state.versionData.versions.length; i++) {
+            const laterVersion = this.state.versionData.versions[i];
+            if (laterVersion && laterVersion.modifiedTokens) {
+                for (const tokenIdx of laterVersion.modifiedTokens) {
+                    if (!laterModifiedTokens.includes(tokenIdx)) {
+                        laterModifiedTokens.push(tokenIdx);
+                    }
+                }
+            }
+        }
+        
+        return laterModifiedTokens;
+    }
+    
+    /**
+     * Process manual edits with enhanced version management
      */
     async processManualEdits() {
         if (!this.state.tokenTextEditor || !this.state.audioBlob) {
@@ -788,10 +1108,36 @@ class UIController {
             return;
         }
         
+        // Check if we're not on the latest version
+        if (this.state.versionData.currentVersionIndex < this.state.versionData.versions.length - 1) {
+            this.showConfirmationDialog(
+                'You are editing a previous version. This will discard all later versions. Continue?',
+                () => this.executeManualEdit(editOperations),
+                () => {} // Do nothing on cancel
+            );
+        } else {
+            await this.executeManualEdit(editOperations);
+        }
+    }
+    
+    /**
+     * Execute manual edit after confirmation if needed
+     * @param {Array} editOperations - Array of edit operations
+     */
+    async executeManualEdit(editOperations) {
+        // Always pause audio when making a new version
+        if (this.elements.audioPlayer) {
+            this.elements.audioPlayer.pause();
+        }
+        
         // Show loading
-        this.showLoading(true);
+        this.showLoading(true, 'Processing edits...');
         
         try {
+            // Get the current transcribed text from the text editor
+            // This ensures we're using the most up-to-date text content
+            const currentText = this.state.tokenTextEditor.getText();
+                    
             // Process edits
             const result = await AudioProcessor.processAudioMulti(this.state.audioBlob, editOperations);
             
@@ -815,8 +1161,49 @@ class UIController {
                 return null;
             }).filter(r => r !== null);
             
-            // Add to version history
-            this.addToVersionHistory(result.processedBlob, editSummary, generatedRegions);
+            // Get current modified tokens
+            const modifiedTokens = this.state.tokenTextEditor ? 
+                this.state.tokenTextEditor.modifiedTokens : [];
+            
+            // Get currently selected tokens
+            const selectedTokens = this.state.tokenTextEditor ?
+                this.state.tokenTextEditor.selectedTokens : [];
+            
+            // Tokenize the edited audio to ensure consistent token data
+            try {
+                // Tokenizing the new audio helps ensure consistent data
+                const tokenizationResult = await AudioProcessor.tokenizeAudio(result.processedBlob);
+                
+                // Add to version history with complete metadata
+                this.addToVersionHistory(
+                    result.processedBlob, 
+                    editSummary, 
+                    generatedRegions,
+                    {
+                        changeType: 'manual-edit',
+                        modifiedTokens: modifiedTokens,
+                        selectedTokens: selectedTokens,
+                        tokenData: tokenizationResult.tokens,
+                        transcribedText: tokenizationResult.text
+                    }
+                );
+            } catch (tokenError) {
+                console.error('Error tokenizing edited audio:', tokenError);
+                
+                // If tokenization fails, use current text as fallback
+                this.addToVersionHistory(
+                    result.processedBlob, 
+                    editSummary, 
+                    generatedRegions,
+                    {
+                        changeType: 'manual-edit',
+                        modifiedTokens: modifiedTokens,
+                        selectedTokens: selectedTokens,
+                        tokenData: this.state.tokenData,
+                        transcribedText: currentText  // Use text editor's current content
+                    }
+                );
+            }
             
             // Show success message
             this.showSuccessMessage(`Edit processed: ${editSummary}`);
@@ -830,7 +1217,7 @@ class UIController {
     }
     
     /**
-     * Process prompt-based edit
+     * Process prompt-based edit with enhanced version management
      */
     async processPrompt() {
         const prompt = this.elements.editPrompt.value.trim();
@@ -845,8 +1232,30 @@ class UIController {
             return;
         }
         
+        // Check if we're not on the latest version
+        if (this.state.versionData.currentVersionIndex < this.state.versionData.versions.length - 1) {
+            this.showConfirmationDialog(
+                'You are editing a previous version. This will discard all later versions. Continue?',
+                () => this.executePromptEdit(prompt),
+                () => {} // Do nothing on cancel
+            );
+        } else {
+            await this.executePromptEdit(prompt);
+        }
+    }
+    
+    /**
+     * Execute prompt-based edit after confirmation if needed
+     * @param {string} prompt - Prompt text for edit
+     */
+    async executePromptEdit(prompt) {
+        // Always pause audio when making a new version
+        if (this.elements.audioPlayer) {
+            this.elements.audioPlayer.pause();
+        }
+        
         // Show loading
-        this.showLoading(true);
+        this.showLoading(true, 'Processing audio...');
         this.state.processingState.processingInProgress = true;
         this.state.processingState.cancelled = false;
         
@@ -858,14 +1267,49 @@ class UIController {
             
             if (this.state.processingState.cancelled) return;
             
-            // Add to version history
-            this.addToVersionHistory(result.processedBlob, `Prompt: ${prompt}`);
+            // Now we need to transcribe the new audio since prompt-based edits
+            // may change the audio in ways the frontend doesn't know about
+            this.showLoading(true, 'Transcribing edited audio...');
             
-            // Show success message
-            this.showSuccessMessage(`Edit processed: ${prompt}`);
-            
-            // Clear prompt
-            this.elements.editPrompt.value = '';
+            try {
+                // Tokenize to get updated transcript
+                const tokenizationResult = await AudioProcessor.tokenizeAudio(result.processedBlob);
+                
+                if (this.state.processingState.cancelled) return;
+                
+                // Extract generated regions from result metadata
+                const generatedRegions = result.metadata?.generatedRegions || [];
+                
+                // Store this information with the version
+                this.addToVersionHistory(
+                    result.processedBlob, 
+                    `Prompt: ${prompt}`,
+                    generatedRegions,
+                    {
+                        changeType: 'prompt-edit',
+                        tokenData: tokenizationResult.tokens,
+                        transcribedText: tokenizationResult.text
+                    }
+                );
+                
+                // Show success message
+                this.showSuccessMessage(`Edit processed: ${prompt}`);
+                
+                // Clear prompt
+                this.elements.editPrompt.value = '';
+            } catch (tokenError) {
+                console.error('Error tokenizing edited audio:', tokenError);
+                
+                // Still add version but without token data - will need to transcribe on next view
+                this.addToVersionHistory(
+                    result.processedBlob, 
+                    `Prompt: ${prompt}`,
+                    result.metadata?.generatedRegions || [],
+                    { changeType: 'prompt-edit-needs-transcription' }
+                );
+                
+                this.showWarning('Edit processed, but could not update transcript. The audio has been updated.');
+            }
         } catch (error) {
             if (!this.state.processingState.cancelled) {
                 console.error('Error processing prompt:', error);
@@ -899,6 +1343,11 @@ class UIController {
      * Reset to step 1
      */
     resetToStep1() {
+        // Stop any playing audio
+        if (this.elements.audioPlayer) {
+            this.elements.audioPlayer.pause();
+        }
+        
         // Cancel any ongoing processes
         if (this.state.processingState.tokenizationInProgress || this.state.processingState.processingInProgress) {
             this.state.processingState.cancelled = true;
@@ -917,11 +1366,19 @@ class UIController {
     }
     
     /**
-     * Show loading indicator
+     * Show loading indicator with optional message
      * @param {boolean} show - Whether to show the loading indicator
+     * @param {string} message - Optional loading message
      */
-    showLoading(show) {
+    showLoading(show, message = 'Processing your audio...') {
+        if (!this.elements.loadingIndicator) return;
+        
         if (show) {
+            // Update loading message if provided
+            const loadingText = this.elements.loadingIndicator.querySelector('.loading-text');
+            if (loadingText) {
+                loadingText.textContent = message;
+            }
             this.elements.loadingIndicator.classList.remove('hidden');
         } else {
             this.elements.loadingIndicator.classList.add('hidden');
@@ -962,6 +1419,39 @@ class UIController {
     }
     
     /**
+     * Show a warning message with milder styling than an error
+     * @param {string} message - Warning message to display
+     */
+    showWarning(message) {
+        // Create warning message element (similar to success but with different colors)
+        const warningMessage = document.createElement('div');
+        warningMessage.className = 'warning-message fade-in';
+        warningMessage.innerHTML = `
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>
+            <p>${message}</p>
+        `;
+        
+        // Get appropriate container
+        const container = this.state.editMode === 'manual' 
+            ? this.elements.manualEditorContainer
+            : this.elements.promptEditorContainer;
+        
+        if (container) {
+            // Add to container
+            container.insertBefore(warningMessage, container.firstChild);
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+                if (warningMessage.parentNode) {
+                    warningMessage.parentNode.removeChild(warningMessage);
+                }
+            }, 5000);
+        }
+    }
+    
+    /**
      * Show error message
      * @param {string} message - Error message to display
      */
@@ -977,6 +1467,41 @@ class UIController {
         setTimeout(() => {
             this.elements.errorMessage.classList.add('hidden');
         }, 5000);
+    }
+    
+    /**
+     * Show a confirmation dialog
+     * @param {string} message - Message to display
+     * @param {Function} confirmCallback - Callback for confirmation
+     * @param {Function} cancelCallback - Callback for cancellation
+     */
+    showConfirmationDialog(message, confirmCallback, cancelCallback) {
+        // Create a dialog element
+        const dialog = document.createElement('div');
+        dialog.className = 'confirmation-dialog fade-in';
+        dialog.innerHTML = `
+            <div class="confirmation-content">
+                <p>${message}</p>
+                <div class="confirmation-buttons">
+                    <button id="confirmYes" class="btn btn-primary">Yes</button>
+                    <button id="confirmNo" class="btn btn-secondary">No</button>
+                </div>
+            </div>
+        `;
+        
+        // Add to body
+        document.body.appendChild(dialog);
+        
+        // Add click handlers
+        document.getElementById('confirmYes').addEventListener('click', () => {
+            document.body.removeChild(dialog);
+            if (confirmCallback) confirmCallback();
+        });
+        
+        document.getElementById('confirmNo').addEventListener('click', () => {
+            document.body.removeChild(dialog);
+            if (cancelCallback) cancelCallback();
+        });
     }
     
     /**

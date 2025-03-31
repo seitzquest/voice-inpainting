@@ -1,7 +1,7 @@
 /**
- * Improved waveform-editor.js
- * Waveform visualization with better token highlighting, integrated download button,
- * and generated audio visualization
+ * Enhanced waveform-editor.js
+ * Waveform visualization with improved token highlighting, integrated download button,
+ * and fixed token alignment issues
  */
 
 class WaveformEditor {
@@ -21,6 +21,8 @@ class WaveformEditor {
             modifiedColor: '#FF5252',
             defaultColor: '#333333',
             darkModeDefaultColor: '#B0B0B0',
+            // Debug mode
+            debugMode: false
         }, options);
         
         // Canvas elements
@@ -392,20 +394,84 @@ class WaveformEditor {
     }
     
     /**
-     * Set token data
+     * Validate token data when set with improved error handling
      * @param {Array} tokens - Array of token metadata objects
      */
     setTokenData(tokens) {
-        this.tokens = tokens || [];
+        // Handle null/undefined case properly
+        if (!tokens) {
+            console.warn('No token data provided to waveform editor');
+            this.tokens = [];
+            this.draw();
+            return;
+        }
+        
+        // Ensure tokens is an array
+        if (!Array.isArray(tokens)) {
+            console.warn('Invalid token data format provided to waveform editor (not an array)');
+            this.tokens = [];
+            this.draw();
+            return;
+        }
+
+        // Skip if tokens array is empty
+        if (tokens.length === 0) {
+            console.warn('Empty token array provided to waveform editor');
+            this.tokens = [];
+            this.draw();
+            return;
+        }
+        
+        // Perform validation and cleanup
+        this.tokens = tokens.filter(token => {
+            // Check for null/undefined tokens
+            if (!token) {
+                console.warn('Null or undefined token in array');
+                return false;
+            }
+            
+            // Check for required fields
+            if (typeof token.token_idx !== 'number') {
+                console.warn('Token missing required token_idx field or not a number:', token);
+                return false;
+            }
+            
+            // Validate timing data
+            if (token.start_time === undefined || token.end_time === undefined ||
+                isNaN(token.start_time) || isNaN(token.end_time) ||
+                token.start_time < 0 || token.end_time < token.start_time) {
+                console.warn(`Token ${token.token_idx} has invalid timing: [${token.start_time}, ${token.end_time}]`);
+                // We'll still include the token but with fixed timing
+                token.start_time = Math.max(0, Number(token.start_time) || 0);
+                token.end_time = Math.max(token.start_time + 0.1, Number(token.end_time) || token.start_time + 0.1);
+            }
+            
+            return true;
+        });
+        
+        // Log success
+        console.debug(`Waveform: Set ${this.tokens.length} valid tokens`);
+        
+        // If there was a previous selection, reapply it
+        if (this.selectedTokens && this.selectedTokens.length > 0) {
+            this.calculateHighlightedRegions();
+        }
+        
         this.draw();
+        this.drawSelectionRanges();
     }
     
     /**
-     * Select tokens to highlight
+     * Select tokens to highlight with improved validation
      * @param {Array} tokenIndices - Array of token indices to highlight
      */
     selectTokens(tokenIndices) {
-        this.selectedTokens = tokenIndices || [];
+        // Validate input
+        this.selectedTokens = Array.isArray(tokenIndices) ? tokenIndices : [];
+        
+        // Log selection for debugging
+        console.debug(`Waveform: Selected tokens: ${this.selectedTokens.join(', ')}`);
+        
         this.calculateHighlightedRegions();
         this.drawSelectionRanges();
     }
@@ -430,92 +496,93 @@ class WaveformEditor {
     }
         
     /**
-     * Calculate time regions to highlight
+     * Calculate time regions to highlight with improved validation
      */
     calculateHighlightedRegions() {
         this.highlightedRegions = [];
         
         if (!this.tokens || !this.selectedTokens.length) return;
         
-        for (const token of this.tokens) {
-            if (this.selectedTokens.includes(token.token_idx)) {
-                if (token.start_time !== undefined && token.end_time !== undefined) {
-                    this.highlightedRegions.push({
-                        start: token.start_time,
-                        end: token.end_time,
-                        tokenIdx: token.token_idx
-                    });
-                }
+        console.debug(`Calculating regions for ${this.selectedTokens.length} selected tokens`);
+        
+        // Sort tokens by start time to ensure consistent rendering
+        const selectedTokens = this.tokens
+            .filter(token => this.selectedTokens.includes(token.token_idx))
+            .sort((a, b) => a.start_time - b.start_time);
+        
+        // Group adjacent tokens into combined regions for smoother highlighting
+        let currentRegion = null;
+        
+        for (const token of selectedTokens) {
+            // Skip tokens with invalid timing data
+            if (token.start_time === undefined || token.end_time === undefined ||
+                isNaN(token.start_time) || isNaN(token.end_time)) {
+                console.warn(`Token ${token.token_idx} has invalid timing: [${token.start_time}, ${token.end_time}]`);
+                continue;
             }
-        }
-    }
-    
-    /**
-     * Draw selection ranges with more subtle highlighting
-     */
-    drawSelectionRanges() {
-        if (!this.audioData || !this.selectionCtx) return;
-        
-        // Clear selection canvas
-        const width = this.selectionCanvas.clientWidth;
-        const height = this.options.height;
-        this.selectionCtx.clearRect(0, 0, width, height);
-        
-        // Draw highlighted regions for selection (more subtle now)
-        if (this.highlightedRegions && this.highlightedRegions.length) {
-            for (const region of this.highlightedRegions) {
-                const startX = this.timeToPosition(region.start);
-                const endX = this.timeToPosition(region.end);
-                
-                this.selectionCtx.fillStyle = this.options.currentRangeColor;
-                this.selectionCtx.fillRect(startX, 0, endX - startX, height);
-            }
-        }
-        
-        // Draw generated regions with a subtle outline
-        if (this.generatedRegions && this.generatedRegions.length) {
-            const isDarkMode = document.documentElement.classList.contains('dark');
-            const outlineColor = isDarkMode ? 'rgba(157, 184, 89, 0.4)' : 'rgba(93, 168, 49, 0.25)';
             
-            for (const region of this.generatedRegions) {
-                const startX = this.timeToPosition(region.start);
-                const endX = this.timeToPosition(region.end);
-                
-                // Draw a subtle border to mark the region
-                this.selectionCtx.strokeStyle = outlineColor;
-                this.selectionCtx.lineWidth = 1;
-                this.selectionCtx.strokeRect(startX, 0, endX - startX, height);
-                
-                // Add a label if the region is wide enough
-                if (endX - startX > 60) {
-                    this.selectionCtx.font = '10px Arial';
-                    this.selectionCtx.fillStyle = isDarkMode ? 'rgba(157, 184, 89, 0.7)' : 'rgba(93, 168, 49, 0.6)';
-                    this.selectionCtx.fillText('Generated', startX + 4, 12);
-                }
+            // Log token timing for debugging
+            console.debug(`Token ${token.token_idx}: [${token.start_time.toFixed(3)}s - ${token.end_time.toFixed(3)}s] "${token.text}"`);
+            
+            if (!currentRegion) {
+                // Start new region
+                currentRegion = {
+                    start: token.start_time,
+                    end: token.end_time,
+                    tokenIndices: [token.token_idx]
+                };
+            } else if (token.start_time <= currentRegion.end + 0.05) {
+                // Extend current region (with small gap tolerance)
+                currentRegion.end = Math.max(currentRegion.end, token.end_time);
+                currentRegion.tokenIndices.push(token.token_idx);
+            } else {
+                // Add completed region and start new one
+                this.highlightedRegions.push(currentRegion);
+                currentRegion = {
+                    start: token.start_time,
+                    end: token.end_time,
+                    tokenIndices: [token.token_idx]
+                };
             }
         }
+        
+        // Add the last region if exists
+        if (currentRegion) {
+            this.highlightedRegions.push(currentRegion);
+        }
+        
+        console.debug(`Created ${this.highlightedRegions.length} highlighted regions`);
     }
     
     /**
-     * Convert time to x-position on canvas
+     * Convert time to x-position on canvas with improved accuracy
      * @param {number} time - Time in seconds
      * @returns {number} - X position on canvas
      */
     timeToPosition(time) {
-        if (!this.audioData) return 0;
+        if (!this.audioData || !this.audioBuffer) return 0;
+        
+        // Ensure time is valid and within range
+        const safeTime = Math.max(0, Math.min(time, this.audioBuffer.duration));
         const width = this.waveformCanvas.clientWidth;
-        return (time / this.audioData.duration) * width;
+        
+        // Calculate position
+        return (safeTime / this.audioBuffer.duration) * width;
     }
     
     /**
-     * Convert x-position to time
+     * Convert x-position to time with improved accuracy
      * @param {number} x - X position on canvas
      * @returns {number} - Time in seconds
      */
     positionToTime(x) {
-        if (!this.audioData) return 0;
+        if (!this.audioData || !this.audioBuffer) return 0;
+        
         const width = this.waveformCanvas.clientWidth;
-        return (x / width) * this.audioData.duration;
+        // Clamp x position to valid range
+        const safeX = Math.max(0, Math.min(x, width));
+        
+        return (safeX / width) * this.audioBuffer.duration;
     }
     
     /**
@@ -606,15 +673,79 @@ class WaveformEditor {
             );
         }
     }
+    
+    /**
+     * Draw selection ranges with improved rendering
+     */
+    drawSelectionRanges() {
+        if (!this.audioData || !this.selectionCtx) return;
+        
+        // Clear selection canvas
+        const width = this.selectionCanvas.clientWidth;
+        const height = this.options.height;
+        this.selectionCtx.clearRect(0, 0, width, height);
+        
+        // Draw highlighted regions for selection
+        if (this.highlightedRegions && this.highlightedRegions.length) {
+            for (const region of this.highlightedRegions) {
+                // Calculate position with increased precision
+                const startX = this.timeToPosition(region.start);
+                const endX = this.timeToPosition(region.end);
+                
+                // Draw region with slightly increased width for visibility
+                const adjustedStartX = Math.max(0, startX - 1);
+                const adjustedWidth = Math.min(width - adjustedStartX, endX - startX + 2);
+                
+                // Use current theme color
+                this.selectionCtx.fillStyle = this.options.currentRangeColor;
+                this.selectionCtx.fillRect(adjustedStartX, 0, adjustedWidth, height);
+                
+                // Draw small indicator at start and end for debugging
+                if (this.options.debugMode) {
+                    this.selectionCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                    this.selectionCtx.fillRect(startX, 0, 2, height);
+                    this.selectionCtx.fillStyle = 'rgba(0, 0, 255, 0.5)';
+                    this.selectionCtx.fillRect(endX - 2, 0, 2, height);
+                }
+            }
+        }
+        
+        // Draw generated regions with a subtle outline
+        if (this.generatedRegions && this.generatedRegions.length) {
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            const outlineColor = isDarkMode ? 'rgba(157, 184, 89, 0.4)' : 'rgba(93, 168, 49, 0.25)';
+            
+            for (const region of this.generatedRegions) {
+                const startX = this.timeToPosition(region.start);
+                const endX = this.timeToPosition(region.end);
+                
+                // Draw a subtle border to mark the region
+                this.selectionCtx.strokeStyle = outlineColor;
+                this.selectionCtx.lineWidth = 1;
+                this.selectionCtx.strokeRect(startX, 0, endX - startX, height);
+                
+                // Add a label if the region is wide enough
+                if (endX - startX > 60) {
+                    this.selectionCtx.font = '10px Arial';
+                    this.selectionCtx.fillStyle = isDarkMode ? 'rgba(157, 184, 89, 0.7)' : 'rgba(93, 168, 49, 0.6)';
+                    this.selectionCtx.fillText('Generated', startX + 4, 12);
+                }
+            }
+        }
+    }
 
     /**
-     * Draw playhead at current audio position
+     * Draw playhead at current audio position with error protection
      */
     drawPlayhead() {
-        if (!this.audioElement || !this.audioData) return;
+        if (!this.audioElement || !this.audioData || !this.playheadCtx) return;
         
         const currentTime = this.audioElement.currentTime;
-        const progress = currentTime / this.audioData.duration;
+        const duration = this.audioElement.duration || this.audioData.duration;
+        
+        if (isNaN(currentTime) || isNaN(duration) || duration === 0) return;
+        
+        const progress = currentTime / duration;
         const width = this.playheadCanvas.clientWidth;
         const height = this.options.height;
         
@@ -632,10 +763,15 @@ class WaveformEditor {
     }
     
     /**
-     * Start playhead animation
+     * Start playhead animation with improved error handling
      */
     startPlayheadAnimation() {
         const animatePlayhead = () => {
+            if (!this.audioElement || !this.playheadCtx) {
+                this.stopPlayheadAnimation();
+                return;
+            }
+            
             this.drawPlayhead();
             if (this.isPlaying) {
                 this.animationFrame = requestAnimationFrame(animatePlayhead);
@@ -647,7 +783,7 @@ class WaveformEditor {
     }
     
     /**
-     * Stop playhead animation
+     * Stop playhead animation and ensure clean state
      */
     stopPlayheadAnimation() {
         if (this.animationFrame) {
@@ -657,7 +793,7 @@ class WaveformEditor {
     }
     
     /**
-     * Toggle audio playback
+     * Toggle audio playback with improved state handling
      */
     togglePlayback() {
         if (!this.audioElement) return;
@@ -665,8 +801,61 @@ class WaveformEditor {
         if (this.isPlaying) {
             this.audioElement.pause();
         } else {
-            this.audioElement.play();
+            this.audioElement.play().catch(err => {
+                console.error('Error playing audio:', err);
+                this.isPlaying = false;
+                this.updatePlayButtonState(false);
+            });
         }
+    }
+    
+    /**
+     * Reset the waveform player state
+     * Used when switching versions or when audio state needs to be cleanly reset
+     */
+    resetPlayback() {
+        // Stop any ongoing playback
+        if (this.audioElement) {
+            // First update our state flag
+            this.isPlaying = false;
+            
+            try {
+                // Then pause the audio element
+                if (!this.audioElement.paused) {
+                    this.audioElement.pause();
+                }
+                
+                // Reset playhead position, if needed
+                if (!isNaN(this.audioElement.duration)) {
+                    this.audioElement.currentTime = 0;
+                }
+            } catch (e) {
+                console.warn("Error resetting audio element:", e);
+            }
+        }
+        
+        // Update UI
+        this.updatePlayButtonState(false);
+        
+        // Stop animations
+        this.stopPlayheadAnimation();
+        
+        // Reset playhead position
+        if (this.playheadCtx && this.playheadCanvas) {
+            const width = this.playheadCanvas.clientWidth;
+            const height = this.options.height;
+            this.playheadCtx.clearRect(0, 0, width, height);
+        }
+        
+        // Remove any event listeners for the current audio play session
+        if (this.animationFrame) {
+            cancelAnimationFrame(this.animationFrame);
+            this.animationFrame = null;
+        }
+        
+        // Redraw the waveform to ensure clean state
+        this.draw();
+        this.drawSelectionRanges();
     }
     
     /**
@@ -719,10 +908,65 @@ class WaveformEditor {
     }
     
     /**
-     * Clean up resources
+     * Enable or disable debug mode
+     * @param {boolean} enable - Whether to enable debug mode
+     */
+    setDebugMode(enable) {
+        this.options.debugMode = !!enable;
+        this.drawSelectionRanges();
+    }
+    
+    /**
+     * Debug function to display token boundaries on the waveform
+     * Enable with: waveformEditor.showAllTokenBoundaries()
+     */
+    showAllTokenBoundaries() {
+        if (!this.tokens || !this.tokens.length || !this.selectionCtx) return;
+        
+        const height = this.options.height;
+        
+        // Draw vertical lines at token boundaries
+        this.tokens.forEach((token, index) => {
+            if (token.start_time !== undefined && token.end_time !== undefined) {
+                const startX = this.timeToPosition(token.start_time);
+                const endX = this.timeToPosition(token.end_time);
+                
+                // Alternate colors for better visibility
+                const color = index % 2 === 0 ? 'rgba(0, 128, 255, 0.3)' : 'rgba(255, 0, 128, 0.3)';
+                
+                this.selectionCtx.strokeStyle = color;
+                this.selectionCtx.lineWidth = 1;
+                
+                // Start boundary
+                this.selectionCtx.beginPath();
+                this.selectionCtx.moveTo(startX, 0);
+                this.selectionCtx.lineTo(startX, height);
+                this.selectionCtx.stroke();
+                
+                // End boundary
+                this.selectionCtx.beginPath();
+                this.selectionCtx.moveTo(endX, 0);
+                this.selectionCtx.lineTo(endX, height);
+                this.selectionCtx.stroke();
+                
+                // Token index
+                if (endX - startX > 20) {
+                    this.selectionCtx.font = '9px monospace';
+                    this.selectionCtx.fillStyle = color;
+                    this.selectionCtx.fillText(`${token.token_idx}`, startX + 2, height - 5);
+                }
+            }
+        });
+    }
+    
+    /**
+     * Clean up resources with improved state handling
      */
     cleanup() {
         this.stopPlayheadAnimation();
+        
+        // Reset playback state
+        this.isPlaying = false;
         
         // Remove DOM elements
         if (this.canvasContainer && this.canvasContainer.parentNode) {
@@ -742,6 +986,7 @@ class WaveformEditor {
         
         // Clear references
         this.audioContext = null;
+        this.audioElement = null;
         this.tokens = [];
         this.selectedTokens = [];
         this.modifiedTokens = [];

@@ -1,6 +1,6 @@
 /* 
 * improved-styles.css
-* Comprehensive dark mode and UI consistency improvements
+* Comprehensive dark mode and UI consistency improvements with enhanced version management
 */
 
 /* ====== Core Theme Variables ====== */
@@ -17,6 +17,7 @@
   --color-gray: #E5E7EB;
   --color-gray-hover: #D1D5DB;
   --color-error: #B91C1C;
+  --color-warning: #ED8936;
   
   /* Elevation */
   --shadow-subtle: 0 2px 15px 0 rgba(160, 160, 160, 0.15);
@@ -485,22 +486,59 @@ header h1 {
   display: flex;
   justify-content: center;
   margin-bottom: 1.5rem;
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+}
+
+.version-control:hover {
+  opacity: 1;
 }
 
 .version-display {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  background-color: rgba(240, 240, 240, 0.5); /* Subtle light background */
+  background-color: rgba(240, 240, 240, 0.4); 
   border-radius: var(--radius-md);
-  padding: 0.5rem 0.75rem;
+  padding: 0.4rem 0.65rem;
   box-shadow: var(--shadow-subtle);
+  min-width: 180px;
+  position: relative;
+  transition: background-color 0.3s ease;
 }
 
 .dark .version-display {
-  background-color: rgba(50, 50, 50, 0.6); /* Subtle dark background */
-  border: 1px solid rgba(100, 100, 100, 0.5);
+  background-color: rgba(50, 50, 50, 0.4);
+  border: 1px solid rgba(100, 100, 100, 0.4);
   color: var(--color-dark);
+}
+
+.version-info {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  text-align: center;
+}
+
+.version-number {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.version-type {
+  color: var(--color-primary);
+  font-size: 0.7rem;
+  margin-top: 2px;
+}
+
+.dark .version-type {
+  color: var(--color-primary-light);
+}
+
+.version-time {
+  font-size: 0.65rem;
+  opacity: 0.7;
+  margin-top: 1px;
 }
 
 .version-btn {
@@ -512,16 +550,19 @@ header h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #333333; /* Dark in light mode */
+  color: #333333;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
 }
 
 .dark .version-btn {
-  color: #F0F0F0; /* Light in dark mode */
+  color: #F0F0F0;
 }
 
 .version-btn:not(:disabled):hover {
   background-color: rgba(0, 0, 0, 0.05);
   transform: scale(1.1);
+  opacity: 1;
 }
 
 .dark .version-btn:not(:disabled):hover {
@@ -531,17 +572,39 @@ header h1 {
 .version-btn:disabled {
   color: var(--color-gray);
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.3;
 }
 
-.version-counter {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: #333333; /* Dark in light mode */
+/* Version tooltip */
+.version-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background-color: var(--color-light);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  box-shadow: var(--shadow-medium);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  max-width: 280px;
+  text-align: center;
+  color: var(--color-dark);  /* Explicitly set color for tooltip */
 }
 
-.dark .version-counter {
-  color: #F0F0F0; /* Light in dark mode */
+.dark .version-tooltip {
+  background-color: #2A2A2A;
+  color: #F0F0F0;  /* Explicitly set light color for dark mode */
+  border: 1px solid #444;
+}
+
+.version-display:hover .version-tooltip {
+  opacity: 1;
 }
 
 /* ====== Waveform Editor ====== */
@@ -869,7 +932,7 @@ header h1 {
 }
 
 /* ====== Messages ====== */
-.success-message, .error-message {
+.success-message, .error-message, .warning-message {
   padding: 1rem;
   border-radius: var(--radius-md);
   margin-bottom: 1.5rem;
@@ -893,6 +956,67 @@ header h1 {
   background-color: rgba(185, 28, 28, 0.1);
   border-left: 4px solid var(--color-error);
   color: var(--color-error);
+}
+
+.warning-message {
+  background-color: rgba(246, 173, 85, 0.15);
+  border-left: 4px solid #ED8936;
+  color: #C05621;
+}
+
+.dark .warning-message {
+  background-color: rgba(246, 173, 85, 0.1);
+  color: #ED8936;
+}
+
+.success-message svg, 
+.error-message svg,
+.warning-message svg {
+  stroke: currentColor;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+}
+
+/* ====== Confirmation Dialog ====== */
+.confirmation-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirmation-content {
+  background-color: var(--color-light);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: var(--shadow-medium);
+}
+
+.dark .confirmation-content {
+  background-color: #2A2A2A;
+  color: var(--color-light);
+  border: 1px solid #444;
+}
+
+.confirmation-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.confirmation-dialog p {
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
 }
 
 /* ====== Loading Indicator ====== */
@@ -1023,15 +1147,8 @@ header h1 {
     bottom: 10px;
     right: 45px;
   }
-}
-
-/* Fix for edit container spacing */
-#editContainer {
-  margin-top: 1rem;
-}
-
-/* Ensure token text area and overlay match exactly */
-#tokenTextArea, .token-editor-overlay {
-  width: 100%;
-  box-sizing: border-box;
+  
+  .version-display {
+    min-width: 180px;
+  }
 }

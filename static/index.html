@@ -47,21 +47,28 @@
                 </button>
             </div>
 
-            <!-- Updated Version Control for better dark mode support -->
+            <!-- Enhanced Version Control Container -->
             <div id="versionControlContainer" class="version-control hidden">
-                <div class="version-display">
-                    <button id="previousVersionButton" class="version-btn" disabled>
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                        </svg>
-                    </button>
-                    <span id="versionDisplay" class="version-counter">Version 1/1</span>
-                    <button id="nextVersionButton" class="version-btn" disabled>
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                    </button>
+                <button id="previousVersionButton" class="version-btn" disabled aria-label="Previous version">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                </button>
+                
+                <div id="versionDisplay" class="version-display">
+                    <div class="version-tooltip">Original audio</div>
+                    <div class="version-info">
+                        <span class="version-number">1/1</span>
+                        <span class="version-type">Original</span>
+                        <span class="version-time">Just now</span>
+                    </div>
                 </div>
+                
+                <button id="nextVersionButton" class="version-btn" disabled aria-label="Next version">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </button>
             </div>
 
             <!-- STEP 1: Audio Input -->
@@ -136,7 +143,7 @@
                                 </svg>
                             </button>
                             
-                            <div class="recording-waveform" id="recordingWaveform">
+                            <div class="recording-waveform" id="playbackWaveform">
                                 <div class="waveform-bar"></div>
                                 <div class="waveform-bar"></div>
                                 <div class="waveform-bar"></div>
