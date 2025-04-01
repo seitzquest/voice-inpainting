@@ -970,15 +970,15 @@ name = "moshi-mlx"
 version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiohttp" },
-    { name = "huggingface-hub" },
-    { name = "mlx" },
-    { name = "numpy" },
-    { name = "rustymimi" },
-    { name = "safetensors" },
-    { name = "sentencepiece" },
-    { name = "sounddevice" },
-    { name = "sphn" },
+    { name = "aiohttp", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "huggingface-hub", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "mlx", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "numpy", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "rustymimi", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "safetensors", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "sentencepiece", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "sounddevice", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "sphn", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/14/47/44a0bbc8c4910b7837f5ed0a5bd2c754c0fff2b058989461e114725a1a52/moshi_mlx-0.2.3.tar.gz", hash = "sha256:eb69c071fdae500744635c3a2e6823609d42e23931d898d6982933353926235e", size = 29958 }
 wheels = [
@@ -1708,15 +1708,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/04/c3/d9a835c6adc96dead
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/cf/cbc7defdb15ecca149c6e8bfd54bcd5eb83f0b8ca121fbc9c0a3dbf37a59/rustymimi-0.4.1-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:f5cc8e54a33403e158e5bf6473843598aa9a7c2baa05f0f965331bb487400351", size = 1400513 },
     { url = "https://files.pythonhosted.org/packages/33/2f/95fdb31a555beebefcec42f73b83e9569691566c7a980142d6445fede350/rustymimi-0.4.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:5ad62782de0b7dc1f9b7b4f6dd0cbab6e22861c5671aad259b19cc6c42b3395c", size = 1231727 },
-    { url = "https://files.pythonhosted.org/packages/64/59/62f7f20044a651a38cca8a83e578ee6ae6590e86ada581093a9c05e8d1e2/rustymimi-0.4.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d42f9b233dec46519cbe162a46c6fd640e7470f3e52ae212edad30e5a98245ea", size = 28338502 },
-    { url = "https://files.pythonhosted.org/packages/6e/de/eabf2136ab493bae3c2f64589e253b7b41e0ea28dd73971d9fd7f2f8ddb7/rustymimi-0.4.1-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:0debe11840c598e4f36b26d68beef2ee1a83e7f9b3942e5e31073c0ec535407c", size = 28090858 },
-    { url = "https://files.pythonhosted.org/packages/a0/7f/09e05048adb42cdde62746ec9d23b3f0cea374864b7881762d693394c7df/rustymimi-0.4.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:73820e5e5a505f64f5f5751ee49cf59175aa39116efb9c4e321e8140b13166b7", size = 28793237 },
-    { url = "https://files.pythonhosted.org/packages/72/67/cc0a88fbebc72f18573cc8f155684828634795173742fdefb4f270c13ac5/rustymimi-0.4.1-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:8e3ea7223af0e53bbcb037585c925edbe4af3c3f7540f63824da132dc3c59c00", size = 27785196 },
-    { url = "https://files.pythonhosted.org/packages/83/25/2f65b68f18d7cb9c6842de4ce56e12a8a51796c55c6e2c44ecc0e3465582/rustymimi-0.4.1-cp312-cp312-musllinux_1_2_armv7l.whl", hash = "sha256:902719308dd5886aa19d4825578f9fb2fe3f18c03a914636a07841a4ae6b92f7", size = 15263798 },
-    { url = "https://files.pythonhosted.org/packages/a6/89/de2b6295d27ec6f5ef789b2dce671ca407ce15c655c595be782dbab90c4f/rustymimi-0.4.1-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:0be21f56f2d4f88534eefb17410d79209d6767aa0a42494cd996574a24ac000d", size = 27696043 },
-    { url = "https://files.pythonhosted.org/packages/84/0b/4f26921053a58df1e3432773c6561e84e2f0910b3e133d289f787afd16ac/rustymimi-0.4.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:60df5be0b146fb03c6cbf8ca6fb5ee8ea434098d16060859bcda23a1a496bd7c", size = 28667401 },
-    { url = "https://files.pythonhosted.org/packages/7b/9e/e0413cc1b62de80226564c5581006aa336f86557fec8c4623cf9f4bbda34/rustymimi-0.4.1-cp312-cp312-win32.whl", hash = "sha256:681934034672c863f50704c0ae2550c5e385cbe5cbfa74bd332ab2c6b417ebdf", size = 1038485 },
-    { url = "https://files.pythonhosted.org/packages/c1/5d/1524849f90be8ea5078b4fcf3626c19a6bb127d208b055c0d5aa38fb6d17/rustymimi-0.4.1-cp312-cp312-win_amd64.whl", hash = "sha256:e74f794264a33478c13b22bb75778c763400beccef22b4bd67022fd2b3eb23d7", size = 1148287 },
 ]
 
 [[package]]
@@ -2258,7 +2249,7 @@ dependencies = [
     { name = "loguru" },
     { name = "matplotlib" },
     { name = "moshi" },
-    { name = "moshi-mlx" },
+    { name = "moshi-mlx", marker = "sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "pyrubberband" },
     { name = "python-multipart" },
@@ -2292,7 +2283,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.2,<0.8" },
     { name = "matplotlib", specifier = ">=3.9.3,<4" },
     { name = "moshi", specifier = ">=0.2.2" },
-    { name = "moshi-mlx", specifier = ">=0.2.3" },
+    { name = "moshi-mlx", marker = "sys_platform == 'darwin'", specifier = ">=0.2.3" },
     { name = "numpy", specifier = ">=2.1.0" },
     { name = "pyrubberband", specifier = ">=0.4.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },

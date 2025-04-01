@@ -33,7 +33,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "dotenv>=0.9.9",
     "whisper-timestamped>=1.15.8",
-    "moshi-mlx>=0.2.3",
+    "moshi-mlx>=0.2.3; sys_platform == 'darwin'",  # Only install on MacOS
 ]
 
 [[tool.uv.index]]
