@@ -303,6 +303,58 @@ class WaveformEditor {
     }
     
     /**
+     * Reload audio data from the current audio element
+     * This is used when the audio source has changed (e.g., when switching versions)
+     */
+    reloadAudioData() {
+        if (!this.audioElement) return;
+        
+        // Reset current data
+        this.audioBuffer = null;
+        this.audioData = null;
+        
+        // Show a visual indication that we're loading
+        if (this.waveformCanvas) {
+            const width = this.waveformCanvas.clientWidth;
+            const height = this.options.height;
+            
+            // Clear existing visualization
+            if (this.ctx) {
+                this.ctx.clearRect(0, 0, width, height);
+                
+                // Draw a loading indicator (subtle pulsing line)
+                this.ctx.fillStyle = 'rgba(200, 200, 200, 0.3)';
+                this.ctx.fillRect(0, height/2 - 1, width, 2);
+            }
+        }
+        
+        // Load the new audio data
+        this.loadAudioData().then(() => {
+            console.debug('Waveform: Audio data reloaded successfully');
+        }).catch(err => {
+            console.error('Error reloading audio data:', err);
+        });
+    }
+    
+    /**
+     * Load and process audio data
+     */
+    async loadAudioData() {
+        if (!this.audioElement) return Promise.reject(new Error('No audio element available'));
+        
+        try {
+            const response = await fetch(this.audioElement.src);
+            const arrayBuffer = await response.arrayBuffer();
+            this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+            this.processAudioData();
+            return Promise.resolve(); // Success
+        } catch (error) {
+            console.error('Error decoding audio data:', error);
+            return Promise.reject(error);
+        }
+    }
+    
+    /**
      * Update play button state
      * @param {boolean} isPlaying - Whether audio is playing
      */
@@ -329,22 +381,6 @@ class WaveformEditor {
             playButton.setAttribute('aria-label', 'Play audio');
             playButton.classList.remove('pause-btn');
             playButton.classList.add('play-btn');
-        }
-    }
-    
-    /**
-     * Load and process audio data
-     */
-    async loadAudioData() {
-        if (!this.audioElement) return;
-        
-        try {
-            const response = await fetch(this.audioElement.src);
-            const arrayBuffer = await response.arrayBuffer();
-            this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-            this.processAudioData();
-        } catch (error) {
-            console.error('Error decoding audio data:', error);
         }
     }
     
@@ -490,7 +526,16 @@ class WaveformEditor {
      * @param {Array} regions - Array of {start, end} time ranges that were generated
      */
     markGeneratedRegions(regions) {
-        this.generatedRegions = regions || [];
+        // Make a deep copy to avoid reference issues
+        this.generatedRegions = regions ? 
+            regions.map(region => ({...region})) : [];
+        
+        // DEBUG: Log for troubleshooting
+        console.debug(`Marked ${this.generatedRegions.length} generated regions`);
+        if (this.generatedRegions.length > 0) {
+            console.debug("First region:", this.generatedRegions[0]);
+        }
+        
         this.draw();
         this.drawSelectionRanges();
     }
@@ -713,11 +758,18 @@ class WaveformEditor {
         // Draw generated regions with a subtle outline
         if (this.generatedRegions && this.generatedRegions.length) {
             const isDarkMode = document.documentElement.classList.contains('dark');
-            const outlineColor = isDarkMode ? 'rgba(157, 184, 89, 0.4)' : 'rgba(93, 168, 49, 0.25)';
+            
+            // Make colors more visible
+            const outlineColor = isDarkMode ? 'rgba(157, 184, 89, 0.6)' : 'rgba(93, 168, 49, 0.4)';
+            const fillColor = isDarkMode ? 'rgba(157, 184, 89, 0.15)' : 'rgba(93, 168, 49, 0.1)';
             
             for (const region of this.generatedRegions) {
                 const startX = this.timeToPosition(region.start);
                 const endX = this.timeToPosition(region.end);
+                
+                // Add background fill for better visibility
+                this.selectionCtx.fillStyle = fillColor;
+                this.selectionCtx.fillRect(startX, 0, endX - startX, height);
                 
                 // Draw a subtle border to mark the region
                 this.selectionCtx.strokeStyle = outlineColor;
@@ -726,8 +778,8 @@ class WaveformEditor {
                 
                 // Add a label if the region is wide enough
                 if (endX - startX > 60) {
-                    this.selectionCtx.font = '10px Arial';
-                    this.selectionCtx.fillStyle = isDarkMode ? 'rgba(157, 184, 89, 0.7)' : 'rgba(93, 168, 49, 0.6)';
+                    this.selectionCtx.font = '10px Arial, sans-serif';
+                    this.selectionCtx.fillStyle = isDarkMode ? 'rgba(157, 184, 89, 0.9)' : 'rgba(93, 168, 49, 0.8)';
                     this.selectionCtx.fillText('Generated', startX + 4, 12);
                 }
             }

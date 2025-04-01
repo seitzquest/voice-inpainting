@@ -697,6 +697,11 @@ class UIController {
         }
         this.elements.audioPlayer.src = URL.createObjectURL(audioBlob);
         
+        // Ensure waveform is updated if it exists
+        if (this.state.waveformEditor) {
+            this.state.waveformEditor.reloadAudioData();
+        }
+        
         // Add to version history (first entry is original audio)
         this.addToVersionHistory(audioBlob, 'Original', [], {
             changeType: 'original'
@@ -775,7 +780,7 @@ class UIController {
             // Mark each generated region with the version index it was created in
             const newVersionIndex = this.state.versionData.versions.length;
             
-            // Add version index to each generated region for tracking
+            // Make a deep copy of the regions to avoid reference issues
             const versionedGeneratedRegions = generatedRegions.map(region => {
                 return {
                     ...region,
@@ -788,6 +793,9 @@ class UIController {
                 ...this.state.versionData.generations,
                 ...versionedGeneratedRegions
             ];
+            
+            // DEBUG: Log generations
+            console.debug(`Added ${versionedGeneratedRegions.length} generated regions to version ${newVersionIndex}`);
         }
         
         // Create complete version entry with all necessary data
@@ -833,6 +841,11 @@ class UIController {
         this.elements.audioPlayer.src = URL.createObjectURL(blobCopy);
         this.elements.audioPlayer.pause();
         
+        // Ensure waveform is updated with the new audio blob
+        if (this.state.waveformEditor) {
+            this.state.waveformEditor.reloadAudioData();
+        }
+        
         // Show version control
         this.elements.versionControlContainer.classList.remove('hidden');
         this.updateVersionDisplay();
@@ -841,7 +854,7 @@ class UIController {
         this.state.tokenData = tokenData;
         this.state.transcribedText = transcribedText;
         
-        // FIXED LOGIC: For manual mode, either tokenize or build the editor
+        // For manual mode, either tokenize or build the editor
         if (this.state.editMode === 'manual') {
             if (!tokenData) {
                 // Reset token data to force re-tokenization
@@ -979,6 +992,11 @@ class UIController {
         }
         this.elements.audioPlayer.src = URL.createObjectURL(version.audioBlob);
         
+        // Reload the waveform data since the audio blob has changed
+        if (this.state.waveformEditor) {
+            this.state.waveformEditor.reloadAudioData();
+        }
+        
         // Update version display
         this.state.versionData.currentVersionIndex = index;
         this.updateVersionDisplay();
@@ -990,12 +1008,17 @@ class UIController {
         if (this.state.editMode === 'manual' && this.state.tokenData) {
             this.buildManualEditor(true); // preserveHighlights = true
             
-            // Apply stored highlights, modifications, etc.
+            // Apply to waveform editor
             if (this.state.waveformEditor) {
                 // Determine what to show based on which version we're viewing:
                 
                 // 1. Show generated regions FOR THIS VERSION ONLY
                 const generatedRegionsForThisVersion = this.getGeneratedRegionsForVersion(index);
+                
+                // DEBUG: Log generated regions for troubleshooting
+                console.debug(`Loading version ${index} with ${generatedRegionsForThisVersion.length} generated regions`);
+                
+                // Ensure we're properly marking generated regions and redrawing
                 this.state.waveformEditor.markGeneratedRegions(generatedRegionsForThisVersion);
                 
                 // 2. Show modified tokens - changes made in this version plus changes in later versions
@@ -1016,6 +1039,10 @@ class UIController {
                 if (version.selectedTokens && version.selectedTokens.length > 0) {
                     this.state.waveformEditor.selectTokens(version.selectedTokens);
                 }
+                
+                // Explicitly redraw waveform and selection ranges
+                this.state.waveformEditor.draw();
+                this.state.waveformEditor.drawSelectionRanges();
             }
             
             // Apply to text editor
@@ -1051,7 +1078,7 @@ class UIController {
         
         // If we're looking at the current version, return its generated regions
         const version = this.state.versionData.versions[versionIndex];
-        if (version && version.versionGeneratedRegions) {
+        if (version && version.versionGeneratedRegions && version.versionGeneratedRegions.length > 0) {
             return [...version.versionGeneratedRegions];
         }
         
@@ -1187,6 +1214,13 @@ class UIController {
                         transcribedText: tokenizationResult.text
                     }
                 );
+                
+                // Explicitly update waveform with generated regions
+                if (this.state.waveformEditor) {
+                    this.state.waveformEditor.markGeneratedRegions(generatedRegions);
+                    this.state.waveformEditor.draw();
+                    this.state.waveformEditor.drawSelectionRanges();
+                }
             } catch (tokenError) {
                 console.error('Error tokenizing edited audio:', tokenError);
                 
@@ -1203,6 +1237,13 @@ class UIController {
                         transcribedText: currentText  // Use text editor's current content
                     }
                 );
+                
+                // Explicitly update waveform with generated regions even if tokenization fails
+                if (this.state.waveformEditor) {
+                    this.state.waveformEditor.markGeneratedRegions(generatedRegions);
+                    this.state.waveformEditor.draw();
+                    this.state.waveformEditor.drawSelectionRanges();
+                }
             }
             
             // Show success message
@@ -1292,6 +1333,13 @@ class UIController {
                     }
                 );
                 
+                // Explicitly update waveform with generated regions
+                if (this.state.waveformEditor) {
+                    this.state.waveformEditor.markGeneratedRegions(generatedRegions);
+                    this.state.waveformEditor.draw();
+                    this.state.waveformEditor.drawSelectionRanges();
+                }
+                
                 // Show success message
                 this.showSuccessMessage(`Edit processed: ${prompt}`);
                 
@@ -1300,13 +1348,23 @@ class UIController {
             } catch (tokenError) {
                 console.error('Error tokenizing edited audio:', tokenError);
                 
+                // Extract generated regions from result metadata even if tokenization fails
+                const generatedRegions = result.metadata?.generatedRegions || [];
+                
                 // Still add version but without token data - will need to transcribe on next view
                 this.addToVersionHistory(
                     result.processedBlob, 
                     `Prompt: ${prompt}`,
-                    result.metadata?.generatedRegions || [],
+                    generatedRegions,
                     { changeType: 'prompt-edit-needs-transcription' }
                 );
+                
+                // Explicitly update waveform with generated regions even if tokenization fails
+                if (this.state.waveformEditor) {
+                    this.state.waveformEditor.markGeneratedRegions(generatedRegions);
+                    this.state.waveformEditor.draw();
+                    this.state.waveformEditor.drawSelectionRanges();
+                }
                 
                 this.showWarning('Edit processed, but could not update transcript. The audio has been updated.');
             }
