@@ -631,7 +631,7 @@ class WaveformEditor {
     }
     
     /**
-     * Draw the waveform
+     * Draw the waveform with enhanced generated region highlighting
      */
     draw() {
         if (!this.audioData) return;
@@ -660,6 +660,24 @@ class WaveformEditor {
             }
         }
         
+        // Create a map of generated regions for efficient lookup
+        const generatedTimeMap = new Map();
+        
+        if (this.generatedRegions && this.generatedRegions.length > 0) {
+            for (const region of this.generatedRegions) {
+                if (region.start !== undefined && region.end !== undefined) {
+                    // Store each region with a unique key based on time range
+                    const key = `${region.start}-${region.end}`;
+                    generatedTimeMap.set(key, {
+                        start: region.start,
+                        end: region.end,
+                        edited: region.edited || '',
+                        original: region.original || ''
+                    });
+                }
+            }
+        }
+        
         // Draw all bars
         for (let i = 0; i < this.audioData.totalBars; i++) {
             const peak = this.audioData.peaks[i];
@@ -677,9 +695,10 @@ class WaveformEditor {
             const startTime = this.positionToTime(x);
             const endTime = this.positionToTime(x + this.options.barWidth);
             
-            // Check if this bar is in a generated region first (highest priority)
+            // Check if this bar is in a generated region - highest priority
             let isGenerated = false;
-            for (const region of this.generatedRegions) {
+            // Iterate through the generated regions
+            for (const [key, region] of generatedTimeMap.entries()) {
                 if (endTime >= region.start && startTime <= region.end) {
                     barColor = generatedColor;
                     isGenerated = true;
@@ -688,7 +707,7 @@ class WaveformEditor {
             }
             
             // If not generated, check if it's modified
-            if (!isGenerated) {
+            if (!isGenerated && this.modifiedTokens && this.modifiedTokens.length > 0) {
                 for (const tokenIdx of this.modifiedTokens) {
                     const timeInfo = tokenTimeMap.get(tokenIdx);
                     if (timeInfo && endTime >= timeInfo.start && startTime <= timeInfo.end) {
@@ -717,10 +736,33 @@ class WaveformEditor {
                 (minHeight - centerY) * -1
             );
         }
+        
+        // Now draw labels for generated regions
+        if (this.generatedRegions && this.generatedRegions.length > 0) {
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            const labelColor = isDarkMode ? 'rgba(157, 184, 89, 0.9)' : 'rgba(93, 168, 49, 0.8)';
+            const labelBgColor = isDarkMode ? 'rgba(50, 50, 50, 0.7)' : 'rgba(255, 255, 255, 0.7)';
+            
+            for (const region of this.generatedRegions) {
+                const startX = this.timeToPosition(region.start);
+                const endX = this.timeToPosition(region.end);
+                const width = endX - startX;
+                
+                // Only add labels for regions wide enough to display them
+                if (width > 60) {
+                    this.ctx.font = '10px Arial, sans-serif';
+                    this.ctx.fillStyle = labelBgColor;
+                    this.ctx.fillRect(startX + 4, 10, 65, 14);
+                    this.ctx.fillStyle = labelColor;
+                    this.ctx.fillText('Generated', startX + 8, 20);
+                }
+            }
+        }
     }
     
     /**
      * Draw selection ranges with improved rendering
+     * Modified to avoid duplicate highlighting of generated regions
      */
     drawSelectionRanges() {
         if (!this.audioData || !this.selectionCtx) return;
@@ -751,36 +793,6 @@ class WaveformEditor {
                     this.selectionCtx.fillRect(startX, 0, 2, height);
                     this.selectionCtx.fillStyle = 'rgba(0, 0, 255, 0.5)';
                     this.selectionCtx.fillRect(endX - 2, 0, 2, height);
-                }
-            }
-        }
-        
-        // Draw generated regions with a subtle outline
-        if (this.generatedRegions && this.generatedRegions.length) {
-            const isDarkMode = document.documentElement.classList.contains('dark');
-            
-            // Make colors more visible
-            const outlineColor = isDarkMode ? 'rgba(157, 184, 89, 0.6)' : 'rgba(93, 168, 49, 0.4)';
-            const fillColor = isDarkMode ? 'rgba(157, 184, 89, 0.15)' : 'rgba(93, 168, 49, 0.1)';
-            
-            for (const region of this.generatedRegions) {
-                const startX = this.timeToPosition(region.start);
-                const endX = this.timeToPosition(region.end);
-                
-                // Add background fill for better visibility
-                this.selectionCtx.fillStyle = fillColor;
-                this.selectionCtx.fillRect(startX, 0, endX - startX, height);
-                
-                // Draw a subtle border to mark the region
-                this.selectionCtx.strokeStyle = outlineColor;
-                this.selectionCtx.lineWidth = 1;
-                this.selectionCtx.strokeRect(startX, 0, endX - startX, height);
-                
-                // Add a label if the region is wide enough
-                if (endX - startX > 60) {
-                    this.selectionCtx.font = '10px Arial, sans-serif';
-                    this.selectionCtx.fillStyle = isDarkMode ? 'rgba(157, 184, 89, 0.9)' : 'rgba(93, 168, 49, 0.8)';
-                    this.selectionCtx.fillText('Generated', startX + 4, 12);
                 }
             }
         }

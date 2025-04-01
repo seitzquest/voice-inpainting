@@ -1003,7 +1003,7 @@ header h1 {
 
 .dark .confirmation-content {
   background-color: #2A2A2A;
-  color: var(--color-light);
+  color: var(--color-dark);
   border: 1px solid #444;
 }
 

@@ -1,6 +1,6 @@
 /**
- * Simplified audio-processor.js
- * Handles audio format conversion and processing
+ * Enhanced audio-processor.js
+ * Handles audio format conversion and processing with improved response handling
  */
 
 class AudioProcessor {
@@ -155,135 +155,186 @@ class AudioProcessor {
     }
     
     /**
-     * Tokenize audio to get token metadata
+     * Tokenize audio to get transcription and token metadata
      * @param {Blob} audioBlob - Audio blob to tokenize
-     * @returns {Promise<Object>} - Object with text and token metadata
+     * @returns {Promise<Object>} - Promise that resolves to tokenization result
      */
     static async tokenizeAudio(audioBlob) {
-        // Create a File object from Blob
-        const audioFile = new File([audioBlob], "input.wav", { 
-            type: "audio/wav",
-            lastModified: new Date().getTime()
-        });
-        
-        const formData = new FormData();
-        formData.append('audio', audioFile);
-        
-        const response = await fetch('/api/tokenize', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+        try {
+            // Create a File object from Blob
+            const audioFile = new File([audioBlob], "input.wav", { 
+                type: "audio/wav",
+                lastModified: new Date().getTime()
+            });
+            
+            // Create form data
+            const formData = new FormData();
+            formData.append('audio', audioFile);
+            formData.append('semantic_only', true);
+            
+            // Send to server
+            const response = await fetch('/api/tokenize', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Tokenization failed: ${errorText}`);
+            }
+            
+            const result = await response.json();
+            
+            // Validate result
+            if (!result.tokens || !result.text) {
+                throw new Error('Invalid tokenization result: missing tokens or text');
+            }
+            
+            return {
+                tokens: result.tokens,
+                text: result.text,
+                llama_tokens: result.llama_tokens,
+                semantic_to_rvq_map: result.semantic_to_rvq_map
+            };
+        } catch (error) {
+            console.error('Error in tokenizeAudio:', error);
+            throw error;
         }
-        
-        return await response.json();
     }
     
     /**
      * Process audio with the server API (prompt-based method)
+     * Enhanced to handle the new backend response that includes tokenization data
      * @param {Blob} audioBlob - Audio blob to process
      * @param {string} prompt - Processing instructions
-     * @returns {Promise<Object>} - Object with processedBlob and metadata
+     * @returns {Promise<Object>} - Object with processedBlob and enhanced metadata
      */
     static async processAudio(audioBlob, prompt) {
-        const formData = new FormData();
-        
-        // Create a File object from Blob
-        const audioFile = new File([audioBlob], "input.wav", { 
-            type: "audio/wav",
-            lastModified: new Date().getTime()
-        });
-        
-        formData.append('audio', audioFile);
-        formData.append('prompt', prompt);
-        formData.append('return_metadata', 'true');
-        
-        const response = await fetch('/api/process', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Server returned ${response.status}: ${await response.text()}`);
-        }
-        
-        let processedBlob;
-        let processingMetadata = {};
-        
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            // Handle JSON response with metadata
-            processingMetadata = await response.json();
+        try {
+            // Create a File object from Blob
+            const audioFile = new File([audioBlob], "input.wav", { 
+                type: "audio/wav",
+                lastModified: new Date().getTime()
+            });
             
-            if (processingMetadata.output_url) {
-                // Fetch the audio file separately
-                const audioResponse = await fetch(processingMetadata.output_url);
-                processedBlob = await audioResponse.blob();
-            } else {
-                throw new Error('No output audio URL in response');
+            // Create form data
+            const formData = new FormData();
+            formData.append('audio', audioFile);
+            formData.append('prompt', prompt);
+            formData.append('return_metadata', 'true');
+            
+            // Send to server
+            const response = await fetch('/api/process', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Processing failed: ${errorText}`);
             }
-        } else {
-            // Direct audio blob response
-            processedBlob = await response.blob();
+            
+            const result = await response.json();
+            
+            // Validate URLs
+            if (!result.output_url) {
+                throw new Error('Invalid processing result: missing output URL');
+            }
+            
+            // Download the processed audio
+            const audioResponse = await fetch(result.output_url);
+            if (!audioResponse.ok) {
+                throw new Error('Failed to download processed audio');
+            }
+            
+            const processedBlob = await audioResponse.blob();
+            
+            // Create a comprehensive result object with enhanced metadata
+            return {
+                processedBlob,
+                metadata: {
+                    prompt,
+                    processingTime: result.processing_time,
+                    // Include tokenization data directly from the server response
+                    tokenization: result.tokenization || {},
+                    // Generated regions (either from server or calculate from edit operations)
+                    generatedRegions: result.generated_regions || [],
+                    // Include edit operations
+                    editOperations: result.edit_operations || []
+                }
+            };
+        } catch (error) {
+            console.error('Error in processAudio:', error);
+            throw error;
         }
-        
-        return {
-            processedBlob,
-            metadata: processingMetadata
-        };
     }
     
     /**
-     * Process audio with the multi-edit API (for manual editing)
+     * Process audio with multiple edit operations
+     * Enhanced to use the same response format as processAudio with improved metadata
      * @param {Blob} audioBlob - Audio blob to process
      * @param {Array} editOperations - Array of edit operations
-     * @returns {Promise<Object>} - Object with processedBlob and metadata
+     * @returns {Promise<Object>} - Object with processedBlob and enhanced metadata
      */
     static async processAudioMulti(audioBlob, editOperations) {
-        const formData = new FormData();
-        
-        // Create a File object from Blob
-        const audioFile = new File([audioBlob], "input.wav", { 
-            type: "audio/wav",
-            lastModified: new Date().getTime()
-        });
-        
-        formData.append('audio', audioFile);
-        formData.append('edit_operations', JSON.stringify(editOperations));
-        formData.append('return_metadata', 'true');
-        
-        const response = await fetch('/api/process-multi', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Server returned ${response.status}: ${await response.text()}`);
-        }
-        
-        let processedBlob;
-        let processingMetadata = {};
-        
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            processingMetadata = await response.json();
+        try {
+            // Create a File object from Blob
+            const audioFile = new File([audioBlob], "input.wav", { 
+                type: "audio/wav",
+                lastModified: new Date().getTime()
+            });
             
-            if (processingMetadata.output_url) {
-                const audioResponse = await fetch(processingMetadata.output_url);
-                processedBlob = await audioResponse.blob();
-            } else {
-                throw new Error('No output audio URL in response');
+            // Create form data
+            const formData = new FormData();
+            formData.append('audio', audioFile);
+            formData.append('edit_operations', JSON.stringify(editOperations));
+            formData.append('return_metadata', 'true');
+            
+            // Send to server
+            const response = await fetch('/api/process-multi', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Multi-operation processing failed: ${errorText}`);
             }
-        } else {
-            processedBlob = await response.blob();
+            
+            const result = await response.json();
+            
+            // Validate URLs
+            if (!result.output_url) {
+                throw new Error('Invalid processing result: missing output URL');
+            }
+            
+            // Download the processed audio
+            const audioResponse = await fetch(result.output_url);
+            if (!audioResponse.ok) {
+                throw new Error('Failed to download processed audio');
+            }
+            
+            const processedBlob = await audioResponse.blob();
+            
+            // Create a comprehensive result object with enhanced metadata
+            // ensuring format matches processAudio for consistency
+            return {
+                processedBlob,
+                metadata: {
+                    editOperations: editOperations,
+                    processingTime: result.processing_time,
+                    // Include tokenization data directly from the server response
+                    tokenization: result.tokenization || {},
+                    // Generated regions (either from server or calculate from edit operations)
+                    generatedRegions: result.generated_regions || [],
+                    // Original edit operations for reference
+                    editOperations: result.edit_operations || editOperations
+                }
+            };
+        } catch (error) {
+            console.error('Error in processAudioMulti:', error);
+            throw error;
         }
-        
-        return {
-            processedBlob,
-            metadata: processingMetadata
-        };
     }
 }
 

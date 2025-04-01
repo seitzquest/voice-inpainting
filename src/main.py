@@ -50,8 +50,8 @@ def voice_inpainting(
     debug_dir: str = "data/debug_output",
     temperature: float = 0.7,
     topk: int = 25,
-) -> Tuple[torch.Tensor, torch.Tensor, int]:
-    """Improved function for voice inpainting with integrated generation
+) -> Dict:
+    """Improved function for voice inpainting with integrated generation and tokenization
 
     Args:
         input_file: Path to the input voice message audio file
@@ -64,7 +64,11 @@ def voice_inpainting(
         topk: Top-k value for sampling during generation
 
     Returns:
-        Tuple of (inpainted_tokens, final_audio, final_sr)
+        Dictionary containing:
+        - tokenization: Result of tokenizing the inpainted audio with transcript and token metadata
+        - processing_time: Time taken to process the edit
+        - edit_operations: Edit operations that were applied
+        - generated_regions: Regions of the audio that were generated
     """
     start_time = time.time()
 
@@ -117,7 +121,9 @@ def voice_inpainting(
                 if edit_op.prepadding_text:
                     f.write(f"Pre-padding (before edit): '{edit_op.prepadding_text}'\n")
                 if edit_op.postpadding_text:
-                    f.write(f"Post-padding (after edit): '{edit_op.postpadding_text}'\n")
+                    f.write(
+                        f"Post-padding (after edit): '{edit_op.postpadding_text}'\n"
+                    )
     else:
         # Multiple edit operations provided as dictionaries
         logger.info(f"Processing {len(edits)} edit operations")
@@ -144,18 +150,24 @@ def voice_inpainting(
             original_start_pos = tokenized_audio.text.find(basic_op.original_text)
             if original_start_pos == -1:
                 # If exact match not found, try a more flexible approach
-                logger.warning(f"Could not find exact match for '{basic_op.original_text}' in text, using approximation")
+                logger.warning(
+                    f"Could not find exact match for '{basic_op.original_text}' in text, using approximation"
+                )
                 # Calculate approximate position based on token indices
                 if basic_op.start_token_idx in tokenized_audio.token_to_text_map:
-                    original_start_pos = tokenized_audio.token_to_text_map[basic_op.start_token_idx]
+                    original_start_pos = tokenized_audio.token_to_text_map[
+                        basic_op.start_token_idx
+                    ]
                 else:
                     # Fallback: find nearest token position
                     nearest_token = min(
                         tokenized_audio.token_to_text_map.keys(),
-                        key=lambda x: abs(x - basic_op.start_token_idx)
+                        key=lambda x: abs(x - basic_op.start_token_idx),
                     )
-                    original_start_pos = tokenized_audio.token_to_text_map[nearest_token]
-            
+                    original_start_pos = tokenized_audio.token_to_text_map[
+                        nearest_token
+                    ]
+
             original_end_pos = original_start_pos + len(basic_op.original_text)
 
             # Find appropriate pre-padding context (text BEFORE the edit)
@@ -164,8 +176,8 @@ def voice_inpainting(
             )
 
             # Find appropriate post-padding context (text AFTER the edit)
-            postpadding_text, postpadding_end_char_idx = editor.find_postpadding_context(
-                tokenized_audio.text, original_end_pos
+            postpadding_text, postpadding_end_char_idx = (
+                editor.find_postpadding_context(tokenized_audio.text, original_end_pos)
             )
 
             # Map prepadding to token indices
@@ -207,7 +219,7 @@ def voice_inpainting(
                 prepadding_end_token_idx=prepadding_end_token_idx,
                 postpadding_text=postpadding_text,
                 postpadding_start_token_idx=postpadding_start_token_idx,
-                postpadding_end_token_idx=postpadding_end_token_idx
+                postpadding_end_token_idx=postpadding_end_token_idx,
             )
 
             edit_operations.append(operation)
@@ -221,9 +233,13 @@ def voice_inpainting(
                         f"Token range: {operation.start_token_idx} to {operation.end_token_idx}\n"
                     )
                     if operation.prepadding_text:
-                        f.write(f"Pre-padding (before edit): '{operation.prepadding_text}'\n")
+                        f.write(
+                            f"Pre-padding (before edit): '{operation.prepadding_text}'\n"
+                        )
                     if operation.postpadding_text:
-                        f.write(f"Post-padding (after edit): '{operation.postpadding_text}'\n")
+                        f.write(
+                            f"Post-padding (after edit): '{operation.postpadding_text}'\n"
+                        )
 
     # Step 3: Perform integrated inpainting
     logger.info("Performing integrated voice inpainting...")
@@ -233,18 +249,12 @@ def voice_inpainting(
         if len(edit_operations) == 1:
             # Process single edit
             inpainted_tokens, final_audio, final_sr = inpainting.inpaint(
-                tokenized_audio, 
-                edit_operations[0],
-                temperature=temperature,
-                topk=topk
+                tokenized_audio, edit_operations[0], temperature=temperature, topk=topk
             )
         else:
             # Process multiple edits
             inpainted_tokens, final_audio, final_sr = inpainting.batch_inpaint(
-                tokenized_audio,
-                edit_operations,
-                temperature=temperature,
-                topk=topk
+                tokenized_audio, edit_operations, temperature=temperature, topk=topk
             )
 
         if debug:
@@ -260,11 +270,114 @@ def voice_inpainting(
     logger.info(f"Saving final audio to {output_file}")
     torchaudio.save(output_file, final_audio.unsqueeze(0), final_sr)
 
+    # Tokenize the final audio to get transcript and token data
+    logger.info("Tokenizing final audio to get transcript and token data...")
+    tokenized_result = tokenizer.tokenize(output_file)
+
+    # Extract token metadata
+    tokens_metadata = []
+    char_to_word = {}
+
+    if tokenized_result.word_timestamps:
+        for word_info in tokenized_result.word_timestamps:
+            word = word_info["text"]
+            word_start = tokenized_result.text.find(word)
+            if word_start >= 0:
+                for i in range(word_start, word_start + len(word)):
+                    char_to_word[i] = word_info
+
+    # Map tokens to text positions and extract metadata
+    if tokenized_result.semantic_tokens:
+        for i in range(len(tokenized_result.semantic_tokens)):
+            # Check if this token index maps to a text position
+            if i in tokenized_result.token_to_text_map:
+                char_idx = tokenized_result.token_to_text_map[i]
+
+                # Find the corresponding word/segment
+                word_info = char_to_word.get(char_idx)
+
+                if word_info:
+                    tokens_metadata.append(
+                        {
+                            "token_idx": i,
+                            "text": word_info["text"],
+                            "start_time": word_info["start"],
+                            "end_time": word_info["end"],
+                            "confidence": word_info.get("confidence", 1.0),
+                        }
+                    )
+
+    # Create a dictionary to store the tokenization result
+    tokenization_result = {
+        "text": tokenized_result.text,
+        "tokens": tokens_metadata,
+        "token_to_text_map": {
+            str(k): v for k, v in (tokenized_result.token_to_text_map or {}).items()
+        },
+        "text_to_token_map": {
+            str(k): v for k, v in (tokenized_result.text_to_token_map or {}).items()
+        },
+        "word_timestamps": tokenized_result.word_timestamps,
+        "semantic_to_rvq_map": {
+            str(k): v for k, v in (tokenized_result.semantic_to_rvq_map or {}).items()
+        },
+    }
+
+    # Create generated regions based on token timing
+    generated_regions = []
+    for op in edit_operations:
+        # Find start and end times based on token indices
+        start_token = next(
+            (t for t in tokens_metadata if t["token_idx"] == op.start_token_idx), None
+        )
+        # For end token, find the one just before the end index
+        end_token = next(
+            (t for t in reversed(tokens_metadata) if t["token_idx"] < op.end_token_idx),
+            None,
+        )
+
+        if start_token and end_token:
+            generated_regions.append(
+                {
+                    "start": start_token["start_time"],
+                    "end": end_token["end_time"],
+                    "original": op.original_text,
+                    "edited": op.edited_text,
+                }
+            )
+        else:
+            # If tokens not found, use the original token indices
+            generated_regions.append(
+                {
+                    "start": op.start_token_idx,
+                    "end": op.end_token_idx,
+                    "original": op.original_text,
+                    "edited": op.edited_text,
+                }
+            )
+
     elapsed_time = time.time() - start_time
     logger.info(
         f"Voice inpainting completed successfully in {elapsed_time:.2f} seconds"
     )
-    return inpainted_tokens, final_audio, final_sr
+
+    # Prepare the result with tokenization data
+    result = {
+        "tokenization": tokenization_result,
+        "processing_time": elapsed_time,
+        "edit_operations": [
+            {
+                "original_text": op.original_text,
+                "edited_text": op.edited_text,
+                "start_token_idx": op.start_token_idx,
+                "end_token_idx": op.end_token_idx,
+            }
+            for op in edit_operations
+        ],
+        "generated_regions": generated_regions,
+    }
+
+    return result
 
 
 def main():

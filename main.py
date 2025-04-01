@@ -258,9 +258,15 @@ async def process_audio(
                 "output_url": output_url,
                 "processing_time": processing_time,
                 "prompt": prompt,
-                "details": processing_result
-                if isinstance(processing_result, (dict, list, str))
-                else "Processing completed successfully",
+                "tokenization": processing_result.get("tokenization", {})
+                if isinstance(processing_result, dict)
+                else {},
+                "generated_regions": processing_result.get("generated_regions", [])
+                if isinstance(processing_result, dict)
+                else [],
+                "edit_operations": processing_result.get("edit_operations", [])
+                if isinstance(processing_result, dict)
+                else [],
             }
             return response_data
         else:
@@ -326,7 +332,7 @@ async def process_audio_multi(
         device = setup_device()
         tokenizer = AudioTokenizer(device=device)
         tokenized_audio = tokenizer.tokenize(input_path)
-        
+
         # Sort edit operations by their start_token_idx to process from left to right
         sorted_edits = sorted(edit_ops, key=lambda op: op["start_token_idx"])
 
@@ -335,7 +341,9 @@ async def process_audio_multi(
 
         # If no mapping is available (should not happen), log a warning
         if not semantic_to_rvq_map:
-            logger.warning("No semantic_to_rvq_map available in tokenized_audio. Using identity mapping as fallback.")
+            logger.warning(
+                "No semantic_to_rvq_map available in tokenized_audio. Using identity mapping as fallback."
+            )
             # Create identity mapping as fallback
             for token_idx in range(len(tokenized_audio.word_timestamps or [])):
                 semantic_to_rvq_map[token_idx] = token_idx
@@ -346,42 +354,50 @@ async def process_audio_multi(
             # Get the semantic token indices from the frontend
             start_idx = edit_dict["start_token_idx"]
             end_idx = edit_dict["end_token_idx"]
-            
+
             # Translate to RVQ token indices using our mapping
             translated_start = semantic_to_rvq_map.get(start_idx, start_idx)
             translated_end = semantic_to_rvq_map.get(end_idx, end_idx)
-            
+
             # Ensure original_text includes all necessary spaces
             original_text = edit_dict["original_text"]
-            
+
             # Handle whitespace preservation in the original text
             # (This helps with the frontend issue)
             if i > 0 and i < len(sorted_edits) - 1:
-                prev_edit = sorted_edits[i-1]
-                next_edit = sorted_edits[i+1]
-                
+                prev_edit = sorted_edits[i - 1]
+                next_edit = sorted_edits[i + 1]
+
                 # Check if we need to add space before this edit
-                if (not prev_edit["original_text"].endswith(' ') and 
-                    not original_text.startswith(' ') and
-                    not prev_edit["original_text"].endswith(('.', ',', '!', '?', ';', ':'))):
-                    original_text = ' ' + original_text
-                    
+                if (
+                    not prev_edit["original_text"].endswith(" ")
+                    and not original_text.startswith(" ")
+                    and not prev_edit["original_text"].endswith(
+                        (".", ",", "!", "?", ";", ":")
+                    )
+                ):
+                    original_text = " " + original_text
+
                 # Check if we need to add space after this edit
-                if (not original_text.endswith(' ') and 
-                    not next_edit["original_text"].startswith(' ') and
-                    not original_text.endswith(('.', ',', '!', '?', ';', ':'))):
-                    original_text = original_text + ' '
-            
+                if (
+                    not original_text.endswith(" ")
+                    and not next_edit["original_text"].startswith(" ")
+                    and not original_text.endswith((".", ",", "!", "?", ";", ":"))
+                ):
+                    original_text = original_text + " "
+
             # Create a new operation with translated indices
             translated_op = {
                 "original_text": original_text,
                 "edited_text": edit_dict["edited_text"],
                 "start_token_idx": translated_start,
-                "end_token_idx": translated_end
+                "end_token_idx": translated_end,
             }
             translated_edit_ops.append(translated_op)
-            
-            logger.info(f"Translated token indices: {start_idx}->{translated_start}, {end_idx}->{translated_end}")
+
+            logger.info(
+                f"Translated token indices: {start_idx}->{translated_start}, {end_idx}->{translated_end}"
+            )
 
         # Process the audio with the new integrated voice inpainting function
         start_time = time.time()
@@ -421,9 +437,13 @@ async def process_audio_multi(
                 "output_url": output_url,
                 "processing_time": processing_time,
                 "edit_operations": edit_ops,
-                "details": processing_result
-                if isinstance(processing_result, (dict, list, str))
-                else "Processing completed successfully",
+                "tokenization": processing_result.get("tokenization", {})
+                if isinstance(processing_result, dict)
+                else {},
+                "generated_regions": processing_result.get("generated_regions", [])
+                if isinstance(processing_result, dict)
+                else [],
+                "details": processing_result,
             }
             return response_data
         else:
