@@ -6,11 +6,15 @@ Converts audio to semantic and acoustic tokens using Mimi and Llama.
 import os
 import torch
 import torchaudio
-import whisper_timestamped
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 from loguru import logger
-from transformers import AutoTokenizer
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSpeechSeq2Seq,
+    AutoProcessor,
+    pipeline,
+)
 from tokenizers.processors import TemplateProcessing
 
 # Import our platform-specific adapter
@@ -49,7 +53,7 @@ class TokenizedAudio:
 
     # Llama tokens when semantic_only=True
     llama_tokens: Optional[List[int]] = None
-    
+
     # Mapping from semantic (word) indices to RVQ token indices
     semantic_to_rvq_map: Optional[Dict[int, int]] = None
 
@@ -67,7 +71,7 @@ class AudioTokenizer:
         self._initialize_tokenizers()
 
     def _initialize_tokenizers(self):
-        """Initialize Mimi RVQ tokenizer, Llama text tokenizer, and Whisper model"""
+        """Initialize Mimi RVQ tokenizer, Llama text tokenizer, and CrisperWhisper model"""
         logger.info("Initializing Mimi RVQ tokenizer...")
         # Use our adapter which will handle platform differences
         self.mimi = MimiTokenizer(device=self.device, num_codebooks=32)
@@ -76,9 +80,118 @@ class AudioTokenizer:
         logger.info("Initializing Llama text tokenizer...")
         self.text_tokenizer = self._load_llama3_tokenizer()
 
-        logger.info("Loading Whisper ASR model...")
-        # Load the whisper model directly - whisper_timestamped uses this in its transcribe function
-        self.whisper_model = whisper_timestamped.load_model("base", device=self.device)
+        logger.info("Loading CrisperWhisper ASR model...")
+        self._initialize_crisper_whisper()
+
+    def _initialize_crisper_whisper(self):
+        """Initialize the CrisperWhisper ASR model with Hugging Face Transformers"""
+        model_id = "nyrahealth/CrisperWhisper"
+
+        # Determine device type and torch dtype based on available hardware
+        device = self.device
+        torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+        # Load model
+        self.whisper_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            model_id,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+            use_safetensors=True,
+        )
+        self.whisper_model.to(device)
+
+        # Load processor
+        self.whisper_processor = AutoProcessor.from_pretrained(model_id)
+
+        # Create pipeline
+        self.whisper_pipeline = pipeline(
+            "automatic-speech-recognition",
+            model=self.whisper_model,
+            tokenizer=self.whisper_processor.tokenizer,
+            feature_extractor=self.whisper_processor.feature_extractor,
+            chunk_length_s=30,
+            batch_size=16,
+            return_timestamps="word",
+            torch_dtype=torch_dtype,
+            device=device,
+        )
+
+    def _adjust_pauses_for_hf_pipeline_output(
+        self, pipeline_output, split_threshold=0.12
+    ):
+        """
+        Adjust pause timings by distributing pauses up to the threshold evenly between adjacent words.
+
+        Args:
+            pipeline_output: Output from the CrisperWhisper pipeline
+            split_threshold: Threshold for pause handling (in seconds)
+
+        Returns:
+            Adjusted pipeline output
+        """
+        adjusted_chunks = pipeline_output["chunks"].copy()
+
+        for i in range(len(adjusted_chunks) - 1):
+            current_chunk = adjusted_chunks[i]
+            next_chunk = adjusted_chunks[i + 1]
+
+            current_start, current_end = current_chunk["timestamp"]
+            next_start, next_end = next_chunk["timestamp"]
+            pause_duration = next_start - current_end
+
+            if pause_duration > 0:
+                if pause_duration > split_threshold:
+                    distribute = split_threshold / 2
+                else:
+                    distribute = pause_duration / 2
+
+                # Adjust current chunk end time
+                adjusted_chunks[i]["timestamp"] = (
+                    current_start,
+                    current_end + distribute,
+                )
+
+                # Adjust next chunk start time
+                adjusted_chunks[i + 1]["timestamp"] = (
+                    next_start - distribute,
+                    next_end,
+                )
+
+        pipeline_output["chunks"] = adjusted_chunks
+        return pipeline_output
+
+    def _transcribe_audio(self, audio_path=None, waveform=None):
+        """
+        Transcribe audio using CrisperWhisper
+
+        Args:
+            audio_path: Path to audio file (optional)
+            waveform: Audio waveform tensor (optional)
+
+        Returns:
+            Transcription result with word-level timestamps
+        """
+        # Determine input type (path or waveform)
+        input_source = audio_path
+
+        # If path doesn't exist but waveform is provided, save temporarily
+        temp_path = None
+        if not os.path.exists(audio_path) and waveform is not None:
+            temp_path = "/tmp/temp_whisper_input.wav"
+            torchaudio.save(temp_path, waveform, self.sample_rate)
+            input_source = temp_path
+
+        # Run transcription
+        crisper_whisper_output = self.whisper_pipeline(input_source)
+
+        # Adjust pauses for better timing
+        result = self._adjust_pauses_for_hf_pipeline_output(crisper_whisper_output)
+
+        # Clean up temporary file if created
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        return result
 
     def _load_llama3_tokenizer(self):
         """Load the Llama 3 tokenizer with special token handling
@@ -107,42 +220,42 @@ class AudioTokenizer:
         """
         Create a consistent mapping from semantic (word) indices to RVQ token indices
         This mapping should be the same regardless of semantic_only parameter
-        
+
         Args:
-            word_timestamps: List of word timing info from Whisper
+            word_timestamps: List of word timing info from transcription
             rvq_tokens: RVQ tokens tensor (optional, for validation)
-            
+
         Returns:
             Dict mapping semantic token indices to RVQ token indices
         """
         semantic_to_rvq_map = {}
-        
+
         if not word_timestamps or len(word_timestamps) == 0:
             return semantic_to_rvq_map
-        
+
         # Calculate token frame rate (Mimi uses 12.5 Hz - 80ms per frame)
         token_frame_rate = 12.5  # frames per second
-        
+
         # Get max valid token index if rvq_tokens is provided
         max_token_idx = None
         if rvq_tokens is not None:
             max_token_idx = rvq_tokens.shape[1] - 1
-        
+
         # Map each word index to the corresponding RVQ token index based on timing
         for i, word_info in enumerate(word_timestamps):
-            # Get word timing
+            # Get word timing - using start time from the timestamp
             start_time = word_info["start"]
-            
+
             # Convert timestamp to RVQ token index
             rvq_index = round(start_time * token_frame_rate)
-            
+
             # Ensure index is valid if we have rvq_tokens
             if max_token_idx is not None:
                 rvq_index = min(max(0, rvq_index), max_token_idx)
-            
+
             # Map the word index (semantic token index) to the RVQ token index
             semantic_to_rvq_map[i] = rvq_index
-        
+
         return semantic_to_rvq_map
 
     def tokenize(
@@ -188,43 +301,32 @@ class AudioTokenizer:
             waveform_device = waveform.to(self.device)
             # The MimiTokenizer handles reshaping internally - no unsqueeze needed
             rvq_tokens = self.mimi.encode(waveform_device)  # (num_codebooks, seq_len)
-            semantic_tokens = rvq_tokens[0].cpu().tolist()  # First codebook contains semantic tokens
+            semantic_tokens = (
+                rvq_tokens[0].cpu().tolist()
+            )  # First codebook contains semantic tokens
 
-        # Transcribe audio with whisper_timestamped
-        logger.info("Transcribing audio with whisper_timestamped...")
+        # Transcribe audio with CrisperWhisper
+        logger.info("Transcribing audio with CrisperWhisper...")
+        crisper_whisper_result = self._transcribe_audio(
+            audio_path=audio_path, waveform=waveform
+        )
 
-        # Save temporary file for Whisper if tensor is provided
-        temp_path = None
-        if os.path.exists(audio_path):
-            # Use whisper_timestamped.transcribe instead
-            whisper_result = whisper_timestamped.transcribe(
-                model=self.whisper_model, audio=audio_path
-            )
-        else:
-            # Create a temporary file to use with whisper_timestamped
-            temp_path = "/tmp/temp_whisper_input.wav"
-            torchaudio.save(temp_path, waveform, self.sample_rate)
-            whisper_result = whisper_timestamped.transcribe(
-                model=self.whisper_model, audio=temp_path
-            )
+        # Extract text from the transcription result
+        transcribed_text = crisper_whisper_result["text"]
 
-        if whisper_result["language"] != "en":
-            logger.warning(f"Models are not optimized for detected language '{whisper_result["language"]}'.")
-
-        # Clean up temporary file if created
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
-
-        # Extract text and timestamps
-        transcribed_text = whisper_result["text"]
-        segments = whisper_result["segments"]
-
-        # Create flat list of all words with timestamps
-        # whisper_timestamped provides words directly in each segment
+        # Convert CrisperWhisper chunks to a format compatible with our existing code
         word_timestamps = []
-        for segment in segments:
-            if "words" in segment:
-                word_timestamps.extend(segment["words"])
+        for chunk in crisper_whisper_result["chunks"]:
+            word_timestamps.append(
+                {
+                    "text": chunk["text"],
+                    "start": chunk["timestamp"][0],
+                    "end": chunk["timestamp"][1],
+                }
+            )
+
+        # Create segments structure (for compatibility with existing code)
+        segments = [{"words": word_timestamps}]
 
         # If semantic-only, get Llama tokens for the transcribed text
         if semantic_only:
@@ -247,8 +349,7 @@ class AudioTokenizer:
 
         # Create consistent mapping from semantic (word) to RVQ token indices
         semantic_to_rvq_map = self.create_semantic_to_rvq_mapping(
-            word_timestamps, 
-            rvq_tokens if not semantic_only else None
+            word_timestamps, rvq_tokens if not semantic_only else None
         )
 
         logger.info(f"Transcribed text: {transcribed_text}")
@@ -303,7 +404,7 @@ class AudioTokenizer:
 
         Args:
             text: Transcribed text
-            word_timestamps: List of word timestamps from Whisper
+            word_timestamps: List of word timestamps from transcription
 
         Returns:
             Tuple of (text_to_token_map, token_to_text_map)
@@ -317,9 +418,7 @@ class AudioTokenizer:
 
         # For each word with timestamp
         for word_data in word_timestamps:
-            word = word_data[
-                "text"
-            ]  # Changed from "word" to "text" for whisper_timestamped
+            word = word_data["text"]
 
             # Find the word position in text
             word_pos = text[text_pos:].find(word)
@@ -348,7 +447,7 @@ class AudioTokenizer:
 
         Args:
             text: Transcribed text
-            word_timestamps: List of word timestamps from Whisper
+            word_timestamps: List of word timestamps from transcription
             rvq_tokens: RVQ tokens
 
         Returns:
@@ -365,9 +464,7 @@ class AudioTokenizer:
 
         # For each word with timestamp
         for word_data in word_timestamps:
-            word = word_data[
-                "text"
-            ]  # Changed from "word" to "text" for whisper_timestamped
+            word = word_data["text"]
             start_time = word_data["start"]
             end_time = word_data["end"]
 

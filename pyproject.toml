@@ -14,7 +14,6 @@ dependencies = [
     "huggingface-hub>=0.26.3,<0.27",
     "regex>=2024.11.6,<2025",
     "safetensors>=0.4.5,<0.5",
-    "transformers>=4.46.3,<5",
     "loguru>=0.7.2,<0.8",
     "fastapi>=0.115.11",
     "uvicorn>=0.34.0",
@@ -25,15 +24,15 @@ dependencies = [
     "ctranslate2>=4.4.0",
     "ipykernel>=6.29.5",
     "moshi>=0.2.2",
-    "tokenizers>=0.21.1",
     "soundfile>=0.13.1",
     "torchao>=0.9.0",
     "torchtune>=0.5.0",
     "silentcipher",
     "python-multipart>=0.0.20",
     "dotenv>=0.9.9",
-    "whisper-timestamped>=1.15.8",
-    "moshi-mlx>=0.2.3; sys_platform == 'darwin'",  # Only install on MacOS
+    "moshi-mlx>=0.2.3; sys_platform == 'darwin'",
+    "transformers",
+    "accelerate>=1.6.0",
 ]
 
 [[tool.uv.index]]
@@ -49,6 +48,7 @@ torchaudio = [
   { index = "pytorch-cu124", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 silentcipher = { git = "https://github.com/SesameAILabs/silentcipher", rev = "master" }
+transformers = { git = "https://github.com/nyrahealth/transformers.git", rev = "crisper_whisper" }
 
 [tool.hatch.build.targets.sdist]
 include = ["src"]
