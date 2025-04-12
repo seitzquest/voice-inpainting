@@ -1,5 +1,5 @@
 """
-Semantic editing module for voice inpainting.
+Semantic editing module for voice inpainting with improved memory management.
 Identifies token sequences to replace based on edit prompts,
 with focus on pre-padding context for better voice generation.
 """
@@ -11,6 +11,7 @@ from llama_cpp import Llama
 from loguru import logger
 
 from src.tokenization import AudioTokenizer, TokenizedAudio
+from src.memory_manager import MemoryManager
 
 
 @dataclass
@@ -39,7 +40,7 @@ class EditOperation:
 
 
 class SemanticEditor:
-    """Identifies token sequences to edit based on prompts"""
+    """Identifies token sequences to edit based on prompts with improved memory management"""
 
     def __init__(
         self,
@@ -56,8 +57,9 @@ class SemanticEditor:
         """
         self.tokenizer = tokenizer
         self.model = None
-        if load_llm:
-            self.model = self._initialize_llm(model_path)
+        self.model_path = model_path
+        self.should_load_llm = load_llm
+        # We'll lazy-load the model only when needed
 
     def _initialize_llm(self, model_path: Optional[str] = None) -> Llama:
         """Initialize the LLM for semantic editing
@@ -68,6 +70,13 @@ class SemanticEditor:
         Returns:
             Initialized LLM model
         """
+        if self.model is not None:
+            logger.info("LLM already loaded")
+            return self.model
+
+        # Log memory before loading
+        MemoryManager.log_memory_stats("Before loading LLM")
+
         # Default to a small model if none specified
         if model_path is None:
             model_path = "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF"
@@ -77,9 +86,35 @@ class SemanticEditor:
 
         logger.info(f"Initializing LLM for semantic editing: {model_path}")
         model = Llama.from_pretrained(
-            repo_id=model_path, filename=filename, chat_format="chatml", verbose=False
+            repo_id=model_path,
+            filename=filename,
+            chat_format="chatml",
+            verbose=False,
+            n_gpu_layers=-1,  # Use GPU for all layers if available
         )
+
+        # Log memory after loading
+        MemoryManager.log_memory_stats("After loading LLM")
+
         return model
+
+    def _unload_llm(self):
+        """Unload the LLM to free memory"""
+        if self.model is not None:
+            logger.info("Unloading LLM to free memory")
+
+            # Log memory before unloading
+            MemoryManager.log_memory_stats("Before unloading LLM")
+
+            # Delete model reference
+            del self.model
+            self.model = None
+
+            # Clear GPU memory
+            MemoryManager.clear_gpu_memory()
+
+            # Log memory after unloading
+            MemoryManager.log_memory_stats("After unloading LLM")
 
     def find_edit_region(
         self, tokenized_audio: TokenizedAudio, edit_prompt: str
@@ -95,9 +130,17 @@ class SemanticEditor:
         """
         text = tokenized_audio.text
 
+        # Lazy-load LLM if needed
+        if self.should_load_llm and self.model is None:
+            self.model = self._initialize_llm(self.model_path)
+
         # Query LLM to find what to replace
         subseq_original, subseq_edited = self._find_edit_substring(text, edit_prompt)
         logger.info(f"Edit proposal: '{subseq_original}' -> '{subseq_edited}'")
+
+        # Unload LLM after use to free memory
+        if self.should_load_llm:
+            self._unload_llm()
 
         # Find the token range for the edit
         # First locate the text indices

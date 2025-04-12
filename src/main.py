@@ -1,9 +1,10 @@
 """
 Improved main pipeline for voice inpainting with RVQ tokens
 Uses integrated approach for more seamless inpainting with correctly identified padding
+and efficient memory management to reduce VRAM usage
 """
 
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Union
 import torch
 import torchaudio
 import os
@@ -15,6 +16,7 @@ from loguru import logger
 from src.tokenization import AudioTokenizer
 from src.semantic_edit import EditOperation, SemanticEditor
 from src.integrated_inpainting import IntegratedVoiceInpainting
+from src.memory_manager import MemoryManager
 
 
 def setup_device() -> str:
@@ -39,6 +41,11 @@ def setup_device() -> str:
         device = "cpu"  # Force CPU on macOS to avoid sparse tensor issues
 
     logger.info(f"Using device: {device}")
+
+    # Log initial memory state
+    if device == "cuda":
+        MemoryManager.log_memory_stats("Initial GPU memory")
+
     return device
 
 
@@ -52,6 +59,7 @@ def voice_inpainting(
     topk: int = 25,
 ) -> Dict:
     """Improved function for voice inpainting with integrated generation and tokenization
+    and memory-efficient processing
 
     Args:
         input_file: Path to the input voice message audio file
@@ -84,8 +92,12 @@ def voice_inpainting(
 
     # Step 1: Tokenize input audio to RVQ tokens
     logger.info("Tokenizing input audio to RVQ tokens...")
+    MemoryManager.log_memory_stats("Before tokenization")
+
     tokenizer = AudioTokenizer(device=device)
     tokenized_audio = tokenizer.tokenize(input_file)
+
+    MemoryManager.log_memory_stats("After tokenization")
 
     if debug:
         # Save original audio for reference
@@ -106,9 +118,15 @@ def voice_inpainting(
     if isinstance(edits, str):
         # Single edit prompt provided - use SemanticEditor to find edit region
         logger.info(f"Processing single edit prompt: {edits}")
+        MemoryManager.log_memory_stats("Before semantic editing")
+
         editor = SemanticEditor(tokenizer, load_llm=True)
         edit_op = editor.find_edit_region(tokenized_audio, edits)
         edit_operations.append(edit_op)
+
+        # Clear memory after using LLM
+        MemoryManager.clear_gpu_memory()
+        MemoryManager.log_memory_stats("After semantic editing")
 
         if debug:
             with open(os.path.join(debug_dir, "03_edit_region.txt"), "w") as f:
@@ -243,6 +261,8 @@ def voice_inpainting(
 
     # Step 3: Perform integrated inpainting
     logger.info("Performing integrated voice inpainting...")
+    MemoryManager.log_memory_stats("Before inpainting")
+
     inpainting = IntegratedVoiceInpainting(device=device)
 
     with torch.inference_mode():
@@ -262,6 +282,8 @@ def voice_inpainting(
             debug_output = os.path.join(debug_dir, "04_inpainted_result.wav")
             torchaudio.save(debug_output, final_audio.unsqueeze(0), final_sr)
 
+    MemoryManager.log_memory_stats("After inpainting")
+
     # Save the result
     out_dir = os.path.dirname(output_file)
     if out_dir and not os.path.exists(out_dir):
@@ -270,9 +292,16 @@ def voice_inpainting(
     logger.info(f"Saving final audio to {output_file}")
     torchaudio.save(output_file, final_audio.unsqueeze(0), final_sr)
 
+    # Clear GPU memory before tokenizing final audio
+    MemoryManager.clear_gpu_memory()
+
     # Tokenize the final audio to get transcript and token data
     logger.info("Tokenizing final audio to get transcript and token data...")
+    MemoryManager.log_memory_stats("Before final tokenization")
+
     tokenized_result = tokenizer.tokenize(output_file)
+
+    MemoryManager.log_memory_stats("After final tokenization")
 
     # Extract token metadata
     tokens_metadata = []
@@ -360,6 +389,10 @@ def voice_inpainting(
     logger.info(
         f"Voice inpainting completed successfully in {elapsed_time:.2f} seconds"
     )
+
+    # Final memory cleanup
+    MemoryManager.clear_gpu_memory()
+    MemoryManager.log_memory_stats("Final memory state")
 
     # Prepare the result with tokenization data
     result = {

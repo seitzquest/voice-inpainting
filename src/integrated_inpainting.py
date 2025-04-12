@@ -1,5 +1,5 @@
 """
-Integrated voice inpainting with end-to-end generation.
+Integrated voice inpainting with end-to-end generation and improved memory management.
 Replaces the separate generation and fusion steps with a single coherent process.
 """
 
@@ -15,6 +15,7 @@ from huggingface_hub import hf_hub_download
 from src.tokenization import TokenizedAudio, AudioTokenizer
 from src.semantic_edit import EditOperation
 from src.generator import load_csm_1b
+from src.memory_manager import MemoryManager
 
 
 @dataclass
@@ -37,26 +38,66 @@ class IntegratedVoiceInpainting:
             device: Device to run inference on ("cpu", "cuda", "mps")
         """
         self.device = device
-        self.generator = self._initialize_csm_model()
-        self.sample_rate = self.generator.sample_rate
+        self.generator = None  # Lazy-load the generator
+        self.sample_rate = (
+            24000  # Set default sample rate (will be updated when generator is loaded)
+        )
         self.tokenizer = AudioTokenizer(device=self.device)
 
     def _initialize_csm_model(self):
-        """Initialize the CSM model
+        """Lazy-initialize the CSM model
 
         Returns:
             Initialized CSM generator
         """
+        if self.generator is not None:
+            logger.info("CSM model already loaded")
+            return self.generator
+
+        # Log memory before loading
+        MemoryManager.log_memory_stats("Before loading CSM model")
+
         logger.info("Initializing CSM model...")
         try:
             # Download the model if needed and load it
             model_path = hf_hub_download(repo_id="sesame/csm-1b", filename="ckpt.pt")
             generator = load_csm_1b(model_path, self.device)
+            self.sample_rate = generator.sample_rate
             logger.info("CSM model loaded successfully")
+
+            # Log memory after loading
+            MemoryManager.log_memory_stats("After loading CSM model")
+
             return generator
         except Exception as e:
             logger.error(f"Error loading CSM model: {e}")
             raise RuntimeError(f"Failed to load CSM model: {e}")
+
+    def _unload_csm_model(self):
+        """Unload the CSM model to free memory"""
+        if self.generator is not None:
+            logger.info("Unloading CSM model to free memory")
+
+            # Log memory before unloading
+            MemoryManager.log_memory_stats("Before unloading CSM model")
+
+            # Move model to CPU first (reduces fragmentation)
+            if self.device != "cpu" and hasattr(self.generator, "_model"):
+                self.generator._model = self.generator._model.cpu()
+
+                # Clear model caches if they exist
+                if hasattr(self.generator, "reset_caches"):
+                    self.generator.reset_caches()
+
+            # Delete model reference
+            del self.generator
+            self.generator = None
+
+            # Clear GPU memory
+            MemoryManager.clear_gpu_memory()
+
+            # Log memory after unloading
+            MemoryManager.log_memory_stats("After unloading CSM model")
 
     def _prepare_context_segments(
         self,
@@ -280,6 +321,10 @@ class IntegratedVoiceInpainting:
         )
         logger.info(f"Using max audio length: {max_audio_length_ms}ms for generation")
 
+        # Lazy-load the CSM model if needed
+        if self.generator is None:
+            self.generator = self._initialize_csm_model()
+
         # Generate the inpainted segment using the CSM model
         with torch.inference_mode():
             # Generate new audio for the edited segment
@@ -291,6 +336,9 @@ class IntegratedVoiceInpainting:
                 temperature=temperature,
                 topk=topk,
             )
+
+            # Unload CSM model to free memory
+            self._unload_csm_model()
 
             # Convert to RVQ tokens
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
@@ -334,6 +382,10 @@ class IntegratedVoiceInpainting:
             logger.info(
                 f"Integrated inpainting completed: {new_tokens.shape[1]} generated frames inserted"
             )
+
+            # Clear GPU memory
+            MemoryManager.clear_gpu_memory()
+
             return inpainted_tokens, inpainted_audio, sr
 
     def batch_inpaint(

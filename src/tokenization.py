@@ -1,5 +1,5 @@
 """
-RVQ tokenization module for voice inpainting.
+RVQ tokenization module for voice inpainting with improved memory management.
 Converts audio to semantic and acoustic tokens using Mimi and Llama.
 """
 
@@ -19,6 +19,7 @@ from tokenizers.processors import TemplateProcessing
 
 # Import our platform-specific adapter
 from src.mimi_tokenizer import MimiTokenizer
+from src.memory_manager import MemoryManager
 
 
 @dataclass
@@ -59,7 +60,7 @@ class TokenizedAudio:
 
 
 class AudioTokenizer:
-    """Tokenizes audio into RVQ tokens using Mimi and Llama"""
+    """Tokenizes audio into RVQ tokens using Mimi and Llama with improved memory management"""
 
     def __init__(self, device="cuda"):
         """Initialize the audio tokenizer
@@ -70,8 +71,13 @@ class AudioTokenizer:
         self.device = device
         self._initialize_tokenizers()
 
+        # Lazy-loaded models
+        self.whisper_model = None
+        self.whisper_processor = None
+        self.whisper_pipeline = None
+
     def _initialize_tokenizers(self):
-        """Initialize Mimi RVQ tokenizer, Llama text tokenizer, and CrisperWhisper model"""
+        """Initialize Mimi RVQ tokenizer and Llama text tokenizer"""
         logger.info("Initializing Mimi RVQ tokenizer...")
         # Use our adapter which will handle platform differences
         self.mimi = MimiTokenizer(device=self.device, num_codebooks=32)
@@ -80,11 +86,16 @@ class AudioTokenizer:
         logger.info("Initializing Llama text tokenizer...")
         self.text_tokenizer = self._load_llama3_tokenizer()
 
-        logger.info("Loading CrisperWhisper ASR model...")
-        self._initialize_crisper_whisper()
+    def _load_crisper_whisper(self):
+        """Lazy-load the CrisperWhisper ASR model with Hugging Face Transformers"""
+        if self.whisper_model is not None:
+            logger.info("CrisperWhisper model already loaded")
+            return
 
-    def _initialize_crisper_whisper(self):
-        """Initialize the CrisperWhisper ASR model with Hugging Face Transformers"""
+        # Log memory before loading
+        MemoryManager.log_memory_stats("Before loading CrisperWhisper")
+
+        logger.info("Loading CrisperWhisper ASR model...")
         model_id = "nyrahealth/CrisperWhisper"
 
         # Determine device type and torch dtype based on available hardware
@@ -115,6 +126,36 @@ class AudioTokenizer:
             torch_dtype=torch_dtype,
             device=device,
         )
+
+        # Log memory after loading
+        MemoryManager.log_memory_stats("After loading CrisperWhisper")
+
+    def _unload_crisper_whisper(self):
+        """Unload CrisperWhisper model to free memory"""
+        if self.whisper_model is not None:
+            logger.info("Unloading CrisperWhisper model to free memory")
+
+            # Log memory before unloading
+            MemoryManager.log_memory_stats("Before unloading CrisperWhisper")
+
+            # Move model to CPU first (reduces fragmentation)
+            if self.device != "cpu" and torch.cuda.is_available():
+                self.whisper_model = self.whisper_model.cpu()
+
+            # Delete models and pipeline
+            del self.whisper_pipeline
+            del self.whisper_model
+            del self.whisper_processor
+
+            self.whisper_pipeline = None
+            self.whisper_model = None
+            self.whisper_processor = None
+
+            # Clear GPU memory
+            MemoryManager.clear_gpu_memory()
+
+            # Log memory after unloading
+            MemoryManager.log_memory_stats("After unloading CrisperWhisper")
 
     def _adjust_pauses_for_hf_pipeline_output(
         self, pipeline_output, split_threshold=0.12
@@ -171,12 +212,17 @@ class AudioTokenizer:
         Returns:
             Transcription result with word-level timestamps
         """
+        # Lazy-load the whisper model
+        self._load_crisper_whisper()
+
         # Determine input type (path or waveform)
         input_source = audio_path
 
         # If path doesn't exist but waveform is provided, save temporarily
         temp_path = None
-        if not os.path.exists(audio_path) and waveform is not None:
+        if (
+            audio_path is None or not os.path.exists(audio_path)
+        ) and waveform is not None:
             temp_path = "/tmp/temp_whisper_input.wav"
             torchaudio.save(temp_path, waveform, self.sample_rate)
             input_source = temp_path
@@ -190,6 +236,9 @@ class AudioTokenizer:
         # Clean up temporary file if created
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
+        # Unload whisper model to free memory
+        self._unload_crisper_whisper()
 
         return result
 
@@ -298,12 +347,19 @@ class AudioTokenizer:
         # Tokenize with Mimi if not semantic_only
         if not semantic_only:
             logger.info("Extracting RVQ tokens with Mimi...")
+            MemoryManager.log_memory_stats("Before Mimi tokenization")
+
             waveform_device = waveform.to(self.device)
             # The MimiTokenizer handles reshaping internally - no unsqueeze needed
             rvq_tokens = self.mimi.encode(waveform_device)  # (num_codebooks, seq_len)
             semantic_tokens = (
                 rvq_tokens[0].cpu().tolist()
             )  # First codebook contains semantic tokens
+
+            # Move waveform back to CPU to free GPU memory
+            waveform = waveform.cpu()
+
+            MemoryManager.log_memory_stats("After Mimi tokenization")
 
         # Transcribe audio with CrisperWhisper
         logger.info("Transcribing audio with CrisperWhisper...")
@@ -360,6 +416,9 @@ class AudioTokenizer:
             logger.info(
                 f"Llama tokens count: {len(llama_tokens) if llama_tokens else 0}"
             )
+
+        # Clear GPU memory
+        MemoryManager.clear_gpu_memory()
 
         return TokenizedAudio(
             audio=waveform.squeeze(0).cpu(),
@@ -515,10 +574,19 @@ class AudioTokenizer:
             Tuple of (audio_tensor, sample_rate)
         """
         logger.info("Reconstructing audio from RVQ tokens...")
+        MemoryManager.log_memory_stats("Before audio reconstruction")
+
         rvq_tokens = rvq_tokens.to(self.device)
         # Decode using our adapter, which handles platform differences
         audio = self.mimi.decode(rvq_tokens)
-        return audio.cpu(), self.sample_rate
+        audio_cpu = audio.cpu()
+
+        # Clear GPU memory
+        MemoryManager.clear_gpu_memory()
+
+        MemoryManager.log_memory_stats("After audio reconstruction")
+
+        return audio_cpu, self.sample_rate
 
     def find_token_range(
         self, tokenized_audio: TokenizedAudio, text_range: Tuple[int, int]

@@ -9,10 +9,12 @@ import uuid
 from typing import Optional
 from loguru import logger
 import time
+import torch
 from dotenv import load_dotenv
 
 from src.main import setup_device, voice_inpainting
 from src.tokenization import AudioTokenizer
+from src.memory_manager import MemoryManager
 
 # Load HF token
 load_dotenv()
@@ -40,10 +42,16 @@ def cleanup_files(file_paths):
     for file_path in file_paths:
         try:
             if os.path.exists(file_path):
-                os.remove(file_path)
-                logger.info(f"Cleaned up temporary file: {file_path}")
+                if os.path.isdir(file_path):
+                    import shutil
+
+                    shutil.rmtree(file_path)
+                    logger.info(f"Cleaned up temporary directory: {file_path}")
+                else:
+                    os.remove(file_path)
+                    logger.info(f"Cleaned up temporary file: {file_path}")
         except Exception as e:
-            logger.error(f"Error cleaning up file {file_path}: {e}")
+            logger.error(f"Error cleaning up path {file_path}: {e}")
 
 
 # Delayed cleanup function for background tasks
@@ -91,12 +99,18 @@ async def tokenize_audio(
         # Set up device
         device = setup_device()
 
+        # Log memory before tokenization
+        MemoryManager.log_memory_stats("API: Before tokenization")
+
         # Tokenize the audio using the AudioTokenizer
         logger.info(
             f"Tokenizing audio to get token metadata (semantic_only={semantic_only})..."
         )
         tokenizer = AudioTokenizer(device=device)
         tokenized_audio = tokenizer.tokenize(input_path, semantic_only=semantic_only)
+
+        # Log memory after tokenization
+        MemoryManager.log_memory_stats("API: After tokenization")
 
         # Extract token metadata including timestamps
         tokens_metadata = []
@@ -150,6 +164,13 @@ async def tokenize_audio(
                             }
                         )
 
+        # Clean up memory
+        del tokenizer
+
+        # Free GPU memory
+        MemoryManager.clear_gpu_memory()
+        MemoryManager.log_memory_stats("API: After cleanup")
+
         # Schedule delayed cleanup of files (30 minutes TTL)
         background_tasks.add_task(delayed_cleanup, [input_path])
 
@@ -172,12 +193,17 @@ async def tokenize_audio(
                 "semantic_to_rvq_map": tokenized_audio.semantic_to_rvq_map,
             }
 
+        # Final cleanup of local variable references
+        del tokenized_audio
+
         return response_data
 
     except Exception as e:
         logger.error(f"Error tokenizing audio: {str(e)}")
         # Clean up any files that were created
         background_tasks.add_task(cleanup_files, [input_path])
+        # Make sure GPU memory is freed in case of errors
+        MemoryManager.clear_gpu_memory()
         raise HTTPException(status_code=500, detail=f"Error tokenizing audio: {str(e)}")
 
 
@@ -220,6 +246,10 @@ async def process_audio(
         file_size = os.path.getsize(input_path)
         logger.info(f"Saved input file to {input_path}, size: {file_size} bytes")
 
+        # Clear GPU memory before processing
+        MemoryManager.clear_gpu_memory()
+        MemoryManager.log_memory_stats("API: Before voice inpainting")
+
         # Process the audio with the improved voice inpainting function and measure time
         start_time = time.time()
         processing_result = voice_inpainting(
@@ -232,6 +262,12 @@ async def process_audio(
             topk=topk,
         )
         processing_time = time.time() - start_time
+
+        # Log memory after processing
+        MemoryManager.log_memory_stats("API: After voice inpainting")
+
+        # Make sure GPU memory is freed after processing
+        MemoryManager.clear_gpu_memory()
 
         # Return the processed audio file
         if not os.path.exists(output_path):
@@ -279,6 +315,8 @@ async def process_audio(
         logger.error(f"Error processing audio: {str(e)}")
         # Clean up any files that were created
         background_tasks.add_task(cleanup_files, [input_path, output_path])
+        # Make sure GPU memory is freed in case of errors
+        MemoryManager.clear_gpu_memory()
         raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
 
 
@@ -328,10 +366,16 @@ async def process_audio_multi(
         file_size = os.path.getsize(input_path)
         logger.info(f"Saved input file to {input_path}, size: {file_size} bytes")
 
+        # Clear GPU memory before tokenization
+        MemoryManager.clear_gpu_memory()
+        MemoryManager.log_memory_stats("API: Before tokenization")
+
         # First tokenize the audio to get the mapping between semantic and RVQ tokens
         device = setup_device()
         tokenizer = AudioTokenizer(device=device)
         tokenized_audio = tokenizer.tokenize(input_path)
+
+        MemoryManager.log_memory_stats("API: After tokenization")
 
         # Sort edit operations by their start_token_idx to process from left to right
         sorted_edits = sorted(edit_ops, key=lambda op: op["start_token_idx"])
@@ -399,6 +443,12 @@ async def process_audio_multi(
                 f"Translated token indices: {start_idx}->{translated_start}, {end_idx}->{translated_end}"
             )
 
+        # Clean up tokenizer and tokenized_audio to free memory before inpainting
+        del tokenizer
+        del tokenized_audio
+        MemoryManager.clear_gpu_memory()
+        MemoryManager.log_memory_stats("API: Before inpainting (multi-edit)")
+
         # Process the audio with the new integrated voice inpainting function
         start_time = time.time()
         processing_result = voice_inpainting(
@@ -411,6 +461,9 @@ async def process_audio_multi(
             topk=topk,
         )
         processing_time = time.time() - start_time
+
+        MemoryManager.log_memory_stats("API: After inpainting (multi-edit)")
+        MemoryManager.clear_gpu_memory()
 
         # Return the processed audio file
         if not os.path.exists(output_path):
@@ -456,6 +509,8 @@ async def process_audio_multi(
         logger.error(f"Error processing audio: {str(e)}")
         # Clean up any files that were created
         background_tasks.add_task(cleanup_files, [input_path, output_path])
+        # Make sure GPU memory is freed in case of errors
+        MemoryManager.clear_gpu_memory()
         raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
 
 
@@ -477,7 +532,52 @@ async def get_audio_file(session_id: str, filename: str):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Health check endpoint with memory information"""
+    status = {"status": "healthy", "gpu_available": torch.cuda.is_available()}
+
+    # Add memory information if GPU is available
+    if torch.cuda.is_available():
+        try:
+            used_memory = torch.cuda.memory_allocated() / (1024**3)
+            total_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            status["gpu_memory"] = {
+                "used_gb": round(used_memory, 2),
+                "total_gb": round(total_memory, 2),
+                "used_percent": round((used_memory / total_memory) * 100, 2),
+            }
+        except Exception as e:
+            status["gpu_memory_error"] = str(e)
+
+    return status
+
+
+@app.get("/api/memory")
+async def memory_stats():
+    """Get current memory statistics"""
+    if not torch.cuda.is_available():
+        return {"status": "gpu_not_available"}
+
+    try:
+        # Clean up GPU memory first
+        MemoryManager.clear_gpu_memory()
+
+        # Get memory statistics
+        used_memory = torch.cuda.memory_allocated() / (1024**3)
+        reserved_memory = torch.cuda.memory_reserved() / (1024**3)
+        total_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+
+        return {
+            "status": "success",
+            "memory_gb": {
+                "used": round(used_memory, 2),
+                "reserved": round(reserved_memory, 2),
+                "total": round(total_memory, 2),
+                "available": round(total_memory - reserved_memory, 2),
+                "used_percent": round((used_memory / total_memory) * 100, 2),
+            },
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # Mount the static files directory AFTER defining all API routes
