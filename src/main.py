@@ -4,7 +4,7 @@ Uses integrated approach for more seamless inpainting with correctly identified 
 and efficient memory management to reduce VRAM usage
 """
 
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 import torch
 import torchaudio
 import os
@@ -57,9 +57,9 @@ def voice_inpainting(
     debug_dir: str = "data/debug_output",
     temperature: float = 0.7,
     topk: int = 25,
+    session_id: Optional[str] = None,
 ) -> Dict:
-    """Improved function for voice inpainting with integrated generation and tokenization
-    and memory-efficient processing
+    """Improved function for voice inpainting using TokenStore for state management
 
     Args:
         input_file: Path to the input voice message audio file
@@ -70,6 +70,7 @@ def voice_inpainting(
         debug_dir: Directory to save debug files if debug is True
         temperature: Temperature for token generation
         topk: Top-k value for sampling during generation
+        session_id: Optional session ID for persistent edit history
 
     Returns:
         Dictionary containing:
@@ -90,44 +91,65 @@ def voice_inpainting(
     # Set up device
     device = setup_device()
 
-    # Step 1: Tokenize input audio to RVQ tokens
-    logger.info("Tokenizing input audio to RVQ tokens...")
-    MemoryManager.log_memory_stats("Before tokenization")
+    # Load or create token store
+    token_store = None
+    is_new_session = True
 
-    tokenizer = AudioTokenizer(device=device)
-    tokenized_audio = tokenizer.tokenize(input_file)
+    # Check if we have an existing session
+    if session_id:
+        # Try to retrieve existing session
+        from src.token_store import get_token_store_by_id
 
-    MemoryManager.log_memory_stats("After tokenization")
+        token_store = get_token_store_by_id(session_id)
+        if token_store:
+            logger.info(f"Using existing token store session: {session_id}")
+            is_new_session = False
 
-    if debug:
-        # Save original audio for reference
-        torchaudio.save(
-            os.path.join(debug_dir, "01_original.wav"),
-            tokenized_audio.audio.unsqueeze(0),
-            tokenized_audio.sample_rate,
+    # Create new token store if needed
+    if token_store is None:
+        from src.token_store import TokenStore
+
+        token_store = TokenStore(device=device)
+        logger.info(
+            f"Created new token store with session ID: {token_store.get_session_id()}"
         )
 
-        # Also save transcription
-        with open(os.path.join(debug_dir, "02_transcription.txt"), "w") as f:
-            f.write(f"Original transcription: {tokenized_audio.text}\n")
+        # Initialize token store with input audio
+        token_store.initialize(input_file)
 
-    # Step 2: Process the edits - either convert a single prompt to an edit operation
-    #         or use the provided list of edits
-    edit_operations = []
+        # Save original audio for reference if in debug mode
+        if debug:
+            original_state = token_store.get_current_state()
+            torchaudio.save(
+                os.path.join(debug_dir, "01_original.wav"),
+                original_state.audio.unsqueeze(0),
+                original_state.sample_rate,
+            )
 
+            # Save transcription
+            with open(os.path.join(debug_dir, "02_transcription.txt"), "w") as f:
+                f.write(f"Original transcription: {original_state.text}\n")
+
+    # Get the current token state
+    current_state = token_store.get_current_state()
+
+    # Process edits based on type
     if isinstance(edits, str):
-        # Single edit prompt provided - use SemanticEditor to find edit region
+        # Single edit prompt
         logger.info(f"Processing single edit prompt: {edits}")
-        MemoryManager.log_memory_stats("Before semantic editing")
 
-        editor = SemanticEditor(tokenizer, load_llm=True)
-        edit_op = editor.find_edit_region(tokenized_audio, edits)
-        edit_operations.append(edit_op)
+        # Use SemanticEditor to find edit region
+        from src.semantic_edit import SemanticEditor
 
-        # Clear memory after using LLM
-        MemoryManager.clear_gpu_memory()
-        MemoryManager.log_memory_stats("After semantic editing")
+        editor = SemanticEditor(token_store.tokenizer, load_llm=True)
+        edit_op = editor.find_edit_region(current_state, edits)
 
+        # Apply edit through token store
+        token_store.apply_edit(
+            edit_op.start_token_idx, edit_op.end_token_idx, edit_op.edited_text
+        )
+
+        # Save debug info if enabled
         if debug:
             with open(os.path.join(debug_dir, "03_edit_region.txt"), "w") as f:
                 f.write(f"Edit prompt: {edits}\n")
@@ -142,275 +164,107 @@ def voice_inpainting(
                     f.write(
                         f"Post-padding (after edit): '{edit_op.postpadding_text}'\n"
                     )
+
+        # Track the single edit operation for the response
+        edit_operations = [
+            {
+                "original_text": edit_op.original_text,
+                "edited_text": edit_op.edited_text,
+                "start_token_idx": edit_op.start_token_idx,
+                "end_token_idx": edit_op.end_token_idx,
+            }
+        ]
     else:
-        # Multiple edit operations provided as dictionaries
+        # Multiple edit operations
         logger.info(f"Processing {len(edits)} edit operations")
 
-        # Sort edit operations by their start_token_idx to process from left to right
-        sorted_edits = sorted(edits, key=lambda op: op["start_token_idx"])
+        # Apply all edits through token store
+        token_store.apply_edit_operations(edits)
 
-        # Process each edit operation to create EditOperation objects
-        editor = SemanticEditor(
-            tokenizer, load_llm=False
-        )  # No LLM needed for manual edits
-
-        for i, edit_dict in enumerate(sorted_edits):
-            # Create basic EditOperation object
-            basic_op = EditOperation(
-                original_text=edit_dict["original_text"],
-                edited_text=edit_dict["edited_text"],
-                start_token_idx=edit_dict["start_token_idx"],
-                end_token_idx=edit_dict["end_token_idx"],
-                confidence=1.0,
-            )
-
-            # Find the position of this edit in the original text
-            original_start_pos = tokenized_audio.text.find(basic_op.original_text)
-            if original_start_pos == -1:
-                # If exact match not found, try a more flexible approach
-                logger.warning(
-                    f"Could not find exact match for '{basic_op.original_text}' in text, using approximation"
-                )
-                # Calculate approximate position based on token indices
-                if basic_op.start_token_idx in tokenized_audio.token_to_text_map:
-                    original_start_pos = tokenized_audio.token_to_text_map[
-                        basic_op.start_token_idx
-                    ]
-                else:
-                    # Fallback: find nearest token position
-                    nearest_token = min(
-                        tokenized_audio.token_to_text_map.keys(),
-                        key=lambda x: abs(x - basic_op.start_token_idx),
-                    )
-                    original_start_pos = tokenized_audio.token_to_text_map[
-                        nearest_token
-                    ]
-
-            original_end_pos = original_start_pos + len(basic_op.original_text)
-
-            # Find appropriate pre-padding context (text BEFORE the edit)
-            prepadding_text, prepadding_start_char_idx = editor.find_prepadding_context(
-                tokenized_audio.text, original_start_pos
-            )
-
-            # Find appropriate post-padding context (text AFTER the edit)
-            postpadding_text, postpadding_end_char_idx = (
-                editor.find_postpadding_context(tokenized_audio.text, original_end_pos)
-            )
-
-            # Map prepadding to token indices
-            prepadding_start_token_idx = -1
-            prepadding_end_token_idx = -1
-            if prepadding_text:
-                # Find the nearest token index to the pre-padding text start position
-                char_positions = sorted(tokenized_audio.text_to_token_map.keys())
-                nearest_pos = min(
-                    char_positions, key=lambda pos: abs(pos - prepadding_start_char_idx)
-                )
-                prepadding_start_token_idx = tokenized_audio.text_to_token_map[
-                    nearest_pos
-                ]
-                prepadding_end_token_idx = basic_op.start_token_idx
-
-            # Map postpadding to token indices
-            postpadding_start_token_idx = basic_op.end_token_idx
-            postpadding_end_token_idx = -1
-            if postpadding_text:
-                # Find the nearest token index to the post-padding text end position
-                char_positions = sorted(tokenized_audio.text_to_token_map.keys())
-                nearest_pos = min(
-                    char_positions, key=lambda pos: abs(pos - postpadding_end_char_idx)
-                )
-                postpadding_end_token_idx = tokenized_audio.text_to_token_map[
-                    nearest_pos
-                ]
-
-            # Create complete EditOperation with pre-padding and post-padding
-            operation = EditOperation(
-                original_text=basic_op.original_text,
-                edited_text=basic_op.edited_text,
-                start_token_idx=basic_op.start_token_idx,
-                end_token_idx=basic_op.end_token_idx,
-                confidence=1.0,
-                prepadding_text=prepadding_text,
-                prepadding_start_token_idx=prepadding_start_token_idx,
-                prepadding_end_token_idx=prepadding_end_token_idx,
-                postpadding_text=postpadding_text,
-                postpadding_start_token_idx=postpadding_start_token_idx,
-                postpadding_end_token_idx=postpadding_end_token_idx,
-            )
-
-            edit_operations.append(operation)
-
-            if debug:
+        # Save debug info for each edit if enabled
+        if debug:
+            for i, edit_dict in enumerate(edits):
                 with open(os.path.join(debug_dir, f"03_edit_{i + 1}.txt"), "w") as f:
                     f.write(f"Edit {i + 1}:\n")
-                    f.write(f"Original text: '{operation.original_text}'\n")
-                    f.write(f"Edited text: '{operation.edited_text}'\n")
+                    f.write(f"Original text: '{edit_dict.get('original_text', '')}'\n")
+                    f.write(f"Edited text: '{edit_dict.get('edited_text', '')}'\n")
                     f.write(
-                        f"Token range: {operation.start_token_idx} to {operation.end_token_idx}\n"
+                        f"Token range: {edit_dict.get('start_token_idx', 0)} to {edit_dict.get('end_token_idx', 0)}\n"
                     )
-                    if operation.prepadding_text:
-                        f.write(
-                            f"Pre-padding (before edit): '{operation.prepadding_text}'\n"
-                        )
-                    if operation.postpadding_text:
-                        f.write(
-                            f"Post-padding (after edit): '{operation.postpadding_text}'\n"
-                        )
 
-    # Step 3: Perform integrated inpainting
-    logger.info("Performing integrated voice inpainting...")
-    MemoryManager.log_memory_stats("Before inpainting")
+        # Track edit operations for the response
+        edit_operations = edits
 
-    inpainting = IntegratedVoiceInpainting(device=device)
+    # Get the updated state and save the output
+    result_state = token_store.get_current_state()
 
-    with torch.inference_mode():
-        if len(edit_operations) == 1:
-            # Process single edit
-            inpainted_tokens, final_audio, final_sr = inpainting.inpaint(
-                tokenized_audio, edit_operations[0], temperature=temperature, topk=topk
-            )
-        else:
-            # Process multiple edits
-            inpainted_tokens, final_audio, final_sr = inpainting.batch_inpaint(
-                tokenized_audio, edit_operations, temperature=temperature, topk=topk
-            )
-
-        if debug:
-            # Save the intermediate result
-            debug_output = os.path.join(debug_dir, "04_inpainted_result.wav")
-            torchaudio.save(debug_output, final_audio.unsqueeze(0), final_sr)
-
-    MemoryManager.log_memory_stats("After inpainting")
-
-    # Save the result
+    # Save output audio
     out_dir = os.path.dirname(output_file)
     if out_dir and not os.path.exists(out_dir):
         os.makedirs(out_dir, exist_ok=True)
 
     logger.info(f"Saving final audio to {output_file}")
-    torchaudio.save(output_file, final_audio.unsqueeze(0), final_sr)
+    torchaudio.save(
+        output_file, result_state.audio.unsqueeze(0), result_state.sample_rate
+    )
 
-    # Clear GPU memory before tokenizing final audio
-    MemoryManager.clear_gpu_memory()
-
-    # Tokenize the final audio to get transcript and token data
-    logger.info("Tokenizing final audio to get transcript and token data...")
-    MemoryManager.log_memory_stats("Before final tokenization")
-
-    tokenized_result = tokenizer.tokenize(output_file)
-
-    MemoryManager.log_memory_stats("After final tokenization")
-
-    # Extract token metadata
-    tokens_metadata = []
-    char_to_word = {}
-
-    if tokenized_result.word_timestamps:
-        for word_info in tokenized_result.word_timestamps:
-            word = word_info["text"]
-            word_start = tokenized_result.text.find(word)
-            if word_start >= 0:
-                for i in range(word_start, word_start + len(word)):
-                    char_to_word[i] = word_info
-
-    # Map tokens to text positions and extract metadata
-    if tokenized_result.semantic_tokens:
-        for i in range(len(tokenized_result.semantic_tokens)):
-            # Check if this token index maps to a text position
-            if i in tokenized_result.token_to_text_map:
-                char_idx = tokenized_result.token_to_text_map[i]
-
-                # Find the corresponding word/segment
-                word_info = char_to_word.get(char_idx)
-
-                if word_info:
-                    tokens_metadata.append(
-                        {
-                            "token_idx": i,
-                            "text": word_info["text"],
-                            "start_time": word_info["start"],
-                            "end_time": word_info["end"],
-                            "confidence": word_info.get("confidence", 1.0),
-                        }
-                    )
-
-    # Create a dictionary to store the tokenization result
-    tokenization_result = {
-        "text": tokenized_result.text,
-        "tokens": tokens_metadata,
-        "token_to_text_map": {
-            str(k): v for k, v in (tokenized_result.token_to_text_map or {}).items()
-        },
-        "text_to_token_map": {
-            str(k): v for k, v in (tokenized_result.text_to_token_map or {}).items()
-        },
-        "word_timestamps": tokenized_result.word_timestamps,
-        "semantic_to_rvq_map": {
-            str(k): v for k, v in (tokenized_result.semantic_to_rvq_map or {}).items()
-        },
-    }
-
-    # Create generated regions based on token timing
-    generated_regions = []
-    for op in edit_operations:
-        # Find start and end times based on token indices
-        start_token = next(
-            (t for t in tokens_metadata if t["token_idx"] == op.start_token_idx), None
-        )
-        # For end token, find the one just before the end index
-        end_token = next(
-            (t for t in reversed(tokens_metadata) if t["token_idx"] < op.end_token_idx),
-            None,
+    # Save debug output if enabled
+    if debug:
+        debug_output = os.path.join(debug_dir, "04_inpainted_result.wav")
+        torchaudio.save(
+            debug_output, result_state.audio.unsqueeze(0), result_state.sample_rate
         )
 
-        if start_token and end_token:
-            generated_regions.append(
-                {
-                    "start": start_token["start_time"],
-                    "end": end_token["end_time"],
-                    "original": op.original_text,
-                    "edited": op.edited_text,
-                }
-            )
-        else:
-            # If tokens not found, use the original token indices
-            generated_regions.append(
-                {
-                    "start": op.start_token_idx,
-                    "end": op.end_token_idx,
-                    "original": op.original_text,
-                    "edited": op.edited_text,
-                }
-            )
+    # Get version information
+    versions = token_store.get_versions()
+    current_version = versions[token_store.get_current_version_index()]
 
+    # Extract generated regions
+    generated_regions = current_version.get("generated_regions", [])
+
+    # Calculate total processing time
     elapsed_time = time.time() - start_time
     logger.info(
         f"Voice inpainting completed successfully in {elapsed_time:.2f} seconds"
     )
 
-    # Final memory cleanup
-    MemoryManager.clear_gpu_memory()
-    MemoryManager.log_memory_stats("Final memory state")
-
-    # Prepare the result with tokenization data
-    result = {
-        "tokenization": tokenization_result,
+    # Prepare response with tokens, text, and metadata
+    response = {
+        "tokenization": {
+            "text": result_state.text,
+            "tokens": [],
+            "token_to_text_map": {
+                str(k): v for k, v in (result_state.token_to_text_map or {}).items()
+            },
+            "text_to_token_map": {
+                str(k): v for k, v in (result_state.text_to_token_map or {}).items()
+            },
+            "word_timestamps": result_state.word_timestamps,
+            "semantic_to_rvq_map": {
+                str(k): v for k, v in (result_state.semantic_to_rvq_map or {}).items()
+            },
+        },
         "processing_time": elapsed_time,
-        "edit_operations": [
-            {
-                "original_text": op.original_text,
-                "edited_text": op.edited_text,
-                "start_token_idx": op.start_token_idx,
-                "end_token_idx": op.end_token_idx,
-            }
-            for op in edit_operations
-        ],
+        "edit_operations": edit_operations,
         "generated_regions": generated_regions,
+        "session_id": token_store.get_session_id(),
+        "version_index": token_store.get_current_version_index(),
+        "total_versions": len(versions),
     }
 
-    return result
+    # Extract token metadata for the response
+    if result_state.word_timestamps:
+        for word_info in result_state.word_timestamps:
+            token_info = {
+                "token_idx": word_info.get("token_idx", -1),
+                "text": word_info.get("text", ""),
+                "start_time": word_info.get("start", 0),
+                "end_time": word_info.get("end", 0),
+                "confidence": word_info.get("confidence", 1.0),
+            }
+            response["tokenization"]["tokens"].append(token_info)
+
+    return response
 
 
 def main():
