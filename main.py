@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from src.main import setup_device, voice_inpainting
 from src.tokenization import AudioTokenizer
 from src.memory_manager import MemoryManager
+from src.api_mvc import router as mvc_router
 
 # Load HF token
 load_dotenv()
@@ -31,6 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include MVC API router for new architecture
+app.include_router(mvc_router)
 
 # Create data directories if they don't exist
 os.makedirs("data/input", exist_ok=True)

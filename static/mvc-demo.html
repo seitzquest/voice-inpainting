@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Inpainting MVC Demo</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .status-connected { color: #10b981; }
+        .status-disconnected { color: #ef4444; }
+        .loading-spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .token {
+            display: inline-block;
+            padding: 2px 4px;
+            margin: 1px;
+            background-color: #e5e7eb;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .token:hover {
+            background-color: #d1d5db;
+        }
+        .token.selected {
+            background-color: #3b82f6;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto">
+            
+            <!-- Header -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Voice Inpainting Editor</h1>
+                <p class="text-gray-600">MVC Architecture Demo - Backend as Single Source of Truth</p>
+                <div class="mt-4 flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <span class="text-sm text-gray-500 mr-2">Status:</span>
+                        <span id="statusIndicator" class="text-sm font-medium">No Session</span>
+                    </div>
+                    <div id="loadingSpinner" class="loading-spinner" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- File Upload Section -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Upload Audio</h2>
+                <div class="flex items-center space-x-4">
+                    <button id="uploadButton" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                        Choose Audio File
+                    </button>
+                    <input type="file" id="fileUpload" accept="audio/*" class="hidden">
+                    <span id="fileName" class="text-sm text-gray-600">No file selected</span>
+                </div>
+            </div>
+
+            <!-- Session Info -->
+            <div id="sessionInfo" class="bg-white rounded-lg shadow-sm p-6 mb-6" style="display: none;">
+                <!-- Session details will be populated here -->
+            </div>
+
+            <!-- Audio Player -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Audio Player</h2>
+                <audio id="audioPlayer" controls class="w-full">
+                    Your browser does not support the audio element.
+                </audio>
+            </div>
+
+            <!-- Text Editor -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-900">Text Editor</h2>
+                    <div class="flex space-x-2">
+                        <button id="undoButton" disabled class="bg-gray-300 text-gray-600 px-3 py-1 rounded">
+                            Undo
+                        </button>
+                        <button id="redoButton" disabled class="bg-gray-300 text-gray-600 px-3 py-1 rounded">
+                            Redo
+                        </button>
+                    </div>
+                </div>
+                
+                <textarea 
+                    id="textEditor" 
+                    class="w-full h-32 p-3 border border-gray-300 rounded-lg resize-none"
+                    placeholder="Upload an audio file to see the transcription here..."
+                    readonly
+                ></textarea>
+                
+                <div class="mt-4">
+                    <p class="text-sm text-gray-600 mb-2">
+                        <strong>Note:</strong> This demo shows the MVC architecture where the backend maintains the single source of truth.
+                        Text editing functionality would require token-level editing implementation.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Token View -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Token View</h2>
+                <div id="tokenContainer" class="border border-gray-300 rounded-lg p-4 min-h-[100px]">
+                    <p class="text-gray-500 text-center">Tokens will appear here after uploading audio</p>
+                </div>
+            </div>
+
+            <!-- Version Control -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Version History</h2>
+                <div class="flex items-center space-x-4">
+                    <label for="versionSelect" class="text-sm font-medium text-gray-700">
+                        Select Version:
+                    </label>
+                    <select id="versionSelect" class="border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">No versions available</option>
+                    </select>
+                </div>
+                <div id="versionInfo" class="mt-4 text-sm text-gray-600">
+                    <!-- Version details will be populated here -->
+                </div>
+            </div>
+
+            <!-- API Demonstration -->
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">API Demonstration</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-800 mb-2">Available Endpoints</h3>
+                        <ul class="text-sm text-gray-600 space-y-1">
+                            <li><code class="bg-gray-100 px-1 rounded">POST /api/v2/sessions</code> - Create session</li>
+                            <li><code class="bg-gray-100 px-1 rounded">GET /api/v2/sessions/{id}/state</code> - Get state</li>
+                            <li><code class="bg-gray-100 px-1 rounded">POST /api/v2/sessions/{id}/edit</code> - Apply edit</li>
+                            <li><code class="bg-gray-100 px-1 rounded">POST /api/v2/sessions/{id}/undo</code> - Undo</li>
+                            <li><code class="bg-gray-100 px-1 rounded">POST /api/v2/sessions/{id}/redo</code> - Redo</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-800 mb-2">MVC Principles</h3>
+                        <ul class="text-sm text-gray-600 space-y-1">
+                            <li>✓ Backend holds single source of truth</li>
+                            <li>✓ Frontend is stateless view layer</li>
+                            <li>✓ All operations refresh from backend</li>
+                            <li>✓ Linear undo/redo history</li>
+                            <li>✓ Consistent token abstraction</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debug Panel -->
+            <div class="bg-gray-50 rounded-lg shadow-sm p-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Debug Information</h2>
+                <div class="space-y-2">
+                    <div class="flex items-center">
+                        <span class="text-sm font-medium text-gray-700 w-32">Session ID:</span>
+                        <span id="debugSessionId" class="text-sm text-gray-600">None</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="text-sm font-medium text-gray-700 w-32">Current Version:</span>
+                        <span id="debugCurrentVersion" class="text-sm text-gray-600">None</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="text-sm font-medium text-gray-700 w-32">Total Versions:</span>
+                        <span id="debugTotalVersions" class="text-sm text-gray-600">None</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="text-sm font-medium text-gray-700 w-32">Can Undo:</span>
+                        <span id="debugCanUndo" class="text-sm text-gray-600">None</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="text-sm font-medium text-gray-700 w-32">Can Redo:</span>
+                        <span id="debugCanRedo" class="text-sm text-gray-600">None</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Include the MVC controller -->
+    <script src="js/mvc-controller.js"></script>
+    
+    <!-- Demo-specific enhancements -->
+    <script>
+        // Wait for MVC controller to initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Override the updateUI method to include debug information
+            const originalUpdateUI = window.mvcController.updateUI;
+            window.mvcController.updateUI = function() {
+                // Call original updateUI
+                originalUpdateUI.call(this);
+                
+                // Update debug panel
+                document.getElementById('debugSessionId').textContent = this.currentSessionId || 'None';
+                document.getElementById('debugCurrentVersion').textContent = 
+                    this.currentState ? (this.currentState.current_version_index + 1) : 'None';
+                document.getElementById('debugTotalVersions').textContent = 
+                    this.currentState ? this.currentState.versions.length : 'None';
+                document.getElementById('debugCanUndo').textContent = 
+                    this.currentState ? this.currentState.can_undo : 'None';
+                document.getElementById('debugCanRedo').textContent = 
+                    this.currentState ? this.currentState.can_redo : 'None';
+                
+                // Show/hide session info
+                const sessionInfoDiv = document.getElementById('sessionInfo');
+                if (this.currentState) {
+                    sessionInfoDiv.style.display = 'block';
+                } else {
+                    sessionInfoDiv.style.display = 'none';
+                }
+                
+                // Update token visualization
+                this.updateTokenVisualization();
+            };
+            
+            // Add token visualization method
+            window.mvcController.updateTokenVisualization = function() {
+                const tokenContainer = document.getElementById('tokenContainer');
+                if (!tokenContainer || !this.currentState?.tokens) {
+                    tokenContainer.innerHTML = '<p class="text-gray-500 text-center">Tokens will appear here after uploading audio</p>';
+                    return;
+                }
+                
+                // Create token elements
+                const tokensHtml = this.currentState.tokens.map((token, index) => {
+                    return `<span class="token" data-token-idx="${index}" title="Token ${index}: ${token.start_time?.toFixed(2)}s-${token.end_time?.toFixed(2)}s">${token.text}</span>`;
+                }).join('');
+                
+                tokenContainer.innerHTML = tokensHtml;
+                
+                // Add click handlers for token selection (demo purpose)
+                tokenContainer.querySelectorAll('.token').forEach(tokenEl => {
+                    tokenEl.addEventListener('click', function() {
+                        // Toggle selection
+                        this.classList.toggle('selected');
+                        console.log('Token clicked:', this.textContent, 'Index:', this.dataset.tokenIdx);
+                    });
+                });
+            };
+        });
+    </script>
+</body>
+</html>

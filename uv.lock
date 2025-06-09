@@ -552,6 +552,34 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcore"
+version = "1.0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "h11" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/45/ad3e1b4d448f22c0cff4f5692f5ed0666658578e358b8d58a19846048059/httpcore-1.0.8.tar.gz", hash = "sha256:86e94505ed24ea06514883fd44d2bc02d90e77e7979c8eb71b90f41d364a1bad", size = 85385 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/8d/f052b1e336bb2c1fc7ed1aaed898aa570c0b61a09707b108979d9fc6e308/httpcore-1.0.8-py3-none-any.whl", hash = "sha256:5254cf149bcb5f75e9d1b2b9f729ea4a4b883d1ad7379fc632b727cec23674be", size = 78732 },
+]
+
+[[package]]
+name = "httpx"
+version = "0.28.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "certifi" },
+    { name = "httpcore" },
+    { name = "idna" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad", size = 73517 },
+]
+
+[[package]]
 name = "huggingface-hub"
 version = "0.26.5"
 source = { registry = "https://pypi.org/simple" }
@@ -915,11 +943,12 @@ wheels = [
 
 [[package]]
 name = "mlx"
-version = "0.24.1"
+version = "0.24.2"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/92/bf617acb0fca620b01da715888b0708f7cc71ffec90d580da5fac1361981/mlx-0.24.1-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:57fd625ff90dab5dbc31678401fed761511b0e376a45b7d5d0fcbe834d3901ca", size = 28163225 },
-    { url = "https://files.pythonhosted.org/packages/5c/ed/5d9baca7d2d343a5610bbd3dc7212a5ec5d5054d02c2fe4ab2915fa7897a/mlx-0.24.1-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:8c42bfaf7cf5083b5a439c8adcae1fc1b8d037b4d40fd36f25fa7708cb5f7271", size = 27954623 },
+    { url = "https://files.pythonhosted.org/packages/20/f7/a8153d0c37f5c85d9c1c21b8c387312197b7452beef2565559cb3a34cc00/mlx-0.24.2-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:3a855809e06becb76ff225dbdea72bed7c8f68dd91d9fa27b8afa8cf949872c6", size = 28207687 },
+    { url = "https://files.pythonhosted.org/packages/03/d0/c356b63ce257ffb6e5a0f04d44e694bdaebe9676ceb1c3b14eaa0da55299/mlx-0.24.2-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:4a5d97a8bde8eaab5d889262be0734234921d4e24c5ab309a74a2d676bb3fb6f", size = 27676214 },
+    { url = "https://files.pythonhosted.org/packages/b1/e3/4be8e60c87a600beec401931f2da71f9ba8acf0a86de78ff9697696ff988/mlx-0.24.2-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:225c876c9335127e3ddbd3feac926c5bb3cbfe5e6503535c80aecebc6d6d7859", size = 27608281 },
 ]
 
 [[package]]
@@ -2224,6 +2253,12 @@ dependencies = [
     { name = "watchdog" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=1.6.0" },
@@ -2255,6 +2290,12 @@ requires-dist = [
     { name = "transformers", git = "https://github.com/nyrahealth/transformers.git?rev=crisper_whisper" },
     { name = "uvicorn", specifier = ">=0.34.0" },
     { name = "watchdog", specifier = ">=6.0.0,<7" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pytest", specifier = ">=8.3.5" },
 ]
 
 [[package]]

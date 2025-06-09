@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Inpainting</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="css/improved-styles.css" rel="stylesheet">
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 200 200%22><style>@media(prefers-color-scheme:dark){.gray{fill:%23B0B0B0}.green{fill:%239DB859}}@media(prefers-color-scheme:light){.gray{fill:%23333333}.green{fill:%235DA831}}.red{fill:%23FF5252}</style><rect rx=%225%22 ry=%225%22 x=%2211.5%22 y=%2265%22 width=%2215%22 height=%2270%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%2238.5%22 y=%2240.5%22 width=%2215%22 height=%22119%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%2265.5%22 y=%2263%22 width=%2215%22 height=%2274%22 class=%22red%22 /><rect rx=%225%22 ry=%225%22 x=%2292.5%22 y=%2262.5%22 width=%2215%22 height=%2275%22 class=%22green%22 /><rect rx=%225%22 ry=%225%22 x=%22119.5%22 y=%2233%22 width=%2215%22 height=%22134%22 class=%22green%22 /><rect rx=%225%22 ry=%225%22 x=%22146.5%22 y=%2269%22 width=%2215%22 height=%2262%22 class=%22gray%22 /><rect rx=%225%22 ry=%225%22 x=%22173.5%22 y=%2237.5%22 width=%2215%22 height=%22115%22 class=%22gray%22 /></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <div class="card">
+            <!-- Header -->
+            <header>
+                <h1>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="32" height="32" class="mr-2">
+                        <rect rx="5" ry="5" x="11.5" y="65" width="15" height="70" fill="currentColor" class="text-gray-bars" />
+                        <rect rx="5" ry="5" x="38.5" y="40.5" width="15" height="119" fill="currentColor" class="text-gray-bars" />
+                        <rect rx="5" ry="5" x="65.5" y="63" width="15" height="74" fill="currentColor" class="text-red-bar" />
+                        <rect rx="5" ry="5" x="92.5" y="62.5" width="15" height="75" fill="currentColor" class="text-green-bar" />
+                        <rect rx="5" ry="5" x="119.5" y="33" width="15" height="134" fill="currentColor" class="text-green-bar" />
+                        <rect rx="5" ry="5" x="146.5" y="69" width="15" height="62" fill="currentColor" class="text-gray-bars" />
+                        <rect rx="5" ry="5" x="173.5" y="37.5" width="15" height="115" fill="currentColor" class="text-gray-bars" />
+                    </svg>
+                    Voice Inpainting
+                </h1>
+                <button id="themeToggle" aria-label="Toggle theme">
+                    <svg id="lightIcon" class="w-6 h-6 text-yellow-500 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    <svg id="darkIcon" class="w-6 h-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- Back Button (Initially Hidden) -->
+            <div id="backButtonContainer" class="hidden">
+                <button id="resetAudioButton" class="back-button">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    <span>Change audio</span>
+                </button>
+            </div>
+
+            <!-- Enhanced Version Control Container -->
+            <div id="versionControlContainer" class="version-control hidden">
+                <button id="previousVersionButton" class="version-btn" disabled aria-label="Previous version">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                </button>
+                
+                <div id="versionDisplay" class="version-display">
+                    <div class="version-tooltip">Original audio</div>
+                    <div class="version-info">
+                        <span class="version-number">1/1</span>
+                        <span class="version-type">Original</span>
+                        <span class="version-time">Just now</span>
+                    </div>
+                </div>
+                
+                <button id="nextVersionButton" class="version-btn" disabled aria-label="Next version">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- STEP 1: Audio Input -->
+            <div id="audioInputContainer">
+                <!-- Input Method Selection -->
+                <div id="inputMethodSelection" class="input-method-container slide-in">
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" id="record" name="audioChoice" value="record" checked>
+                            <span>Record audio</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" id="upload" name="audioChoice" value="upload">
+                            <span>Upload WAV file</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Record Section -->
+                <div id="recordSection" class="slide-in">
+                    <!-- Initial recording state -->
+                    <div id="preRecordingState">
+                        <div class="drop-zone">
+                            <button id="recordButton" class="btn btn-primary btn-with-icon">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                                </svg>
+                                Start Recording
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Active recording state -->
+                    <div id="activeRecordingState" class="hidden fade-in">
+                        <div class="recording-container">
+                            <button id="pauseRecordingBtn" class="control-btn pause-btn">
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </button>
+                            
+                            <div class="recording-waveform recording-active" id="recordingWaveform">
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                            </div>
+                            
+                            <div class="recording-controls">
+                                <div class="recording-time">
+                                    <span id="recordingTime">0:00</span>
+                                </div>
+                                
+                                <button id="submitRecordingBtn" class="submit-btn">
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Paused recording preview state -->
+                    <div id="pausedRecordingState" class="hidden fade-in">
+                        <div class="recording-container">
+                            <button id="playRecordingBtn" class="control-btn play-btn">
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </button>
+                            
+                            <div class="recording-waveform" id="playbackWaveform">
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                                <div class="waveform-bar"></div>
+                            </div>
+                            
+                            <div class="recording-controls">
+                                <button id="trashRecordingBtn" class="trash-btn control-btn">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+                                
+                                <button id="finalizeRecordingBtn" class="submit-btn">
+                                    Continue
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upload Section -->
+                <div id="uploadSection" class="hidden slide-in">
+                    <div id="dropZoneContainer" class="drop-zone">
+                        <input type="file" id="fileUpload" accept=".wav" class="hidden">
+                        <div class="drop-zone-content">
+                            <button id="uploadButton" class="btn btn-primary btn-with-icon mb-2">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                </svg>
+                                Choose WAV File
+                            </button>
+                        </div>
+                        <p id="fileName" class="mt-4 font-medium hidden"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Edit & Result (Updated with Claude-style editing interface) -->
+            <div id="editContainer" class="hidden">
+                <!-- Waveform Visualization -->
+                <div class="editor-container">
+                    <h3 class="section-heading">Audio Waveform</h3>
+                    <div class="waveform-editor-container" id="waveformContainer">
+                        <!-- Waveform will be inserted here by JS -->
+                        <button id="waveformDownloadBtn" class="waveform-download-btn" title="Download audio">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Claude-style Editing Interface -->
+                <div class="editor-wrapper">
+                    <!-- Manual Editor Container -->
+                    <div id="manualEditorContainer" class="editor-container">
+                        <div class="text-editor">
+                            <textarea id="tokenTextArea" class="editor-input" placeholder="Text will appear here after processing..."></textarea>
+                            <div class="token-editor-overlay"></div>
+                        </div>
+                        <!-- Mode Selector moved inside text editor, next to send button -->
+                        <div class="editor-mode-selector">
+                            <div id="editModeSelector" class="mode-dropdown">
+                                <div class="selected-mode">
+                                    <span id="currentEditMode">Manual</span>
+                                    <svg class="dropdown-arrow" width="10" height="5" viewBox="0 0 10 5" fill="none">
+                                        <path d="M1 1L5 4L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </div>
+                                <div class="mode-options hidden">
+                                    <div class="mode-option" data-mode="manual">
+                                        <span class="mode-name">Manual Editing</span>
+                                    </div>
+                                    <div class="mode-option" data-mode="prompt">
+                                        <span class="mode-name">Prompt-Based</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Simplified arrow send button -->
+                        <button id="processManualEditBtn" class="editor-send-btn" title="Process edits">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 8h10M9 4l4 4-4 4"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Prompt Editor Container -->
+                    <div id="promptEditorContainer" class="editor-container hidden">
+                        <div class="text-editor">
+                            <textarea id="editPrompt" class="editor-input" placeholder="Describe how you want to edit the audio..."></textarea>
+                        </div>
+                        <!-- Mode Selector stays in same position for consistent UX -->
+                            <div class="editor-mode-selector">
+                                <div id="promptModeSelector" class="mode-dropdown">
+                                    <div class="selected-mode">
+                                        <span id="currentPromptMode">Prompt</span>
+                                        <svg class="dropdown-arrow" width="10" height="5" viewBox="0 0 10 5" fill="none">
+                                            <path d="M1 1L5 4L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </div>
+                                    <div class="mode-options hidden">
+                                        <div class="mode-option" data-mode="manual">
+                                            <span class="mode-name">Manual Editing</span>
+                                        </div>
+                                        <div class="mode-option" data-mode="prompt">
+                                            <span class="mode-name">Prompt-Based</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Same arrow send button for consistency -->
+                            <button id="processPromptBtn" class="editor-send-btn" title="Process prompt">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 8h10M9 4l4 4-4 4"/>
+                                </svg>
+                            </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="loading-container hidden">
+                <div class="loading-spinner"></div>
+                <p class="loading-text">Processing your audio...</p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="error-message hidden">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <p id="errorText"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden audio elements -->
+    <audio id="previewPlayer" class="hidden"></audio>
+    <audio id="audioPlayer" class="hidden"></audio>
+
+    <!-- JavaScript -->
+    <script src="js/theme-controller.js"></script>
+    <script src="js/audio-recorder.js"></script>
+    <script src="js/audio-processor.js"></script>
+    <script src="js/visualizer.js"></script>
+    <script src="js/waveform-editor.js"></script>
+    <script src="js/token-text-editor.js"></script>
+    <script src="js/ui-controller.js"></script>
+    <script src="js/dropdown-handler.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Test Suite - Voice Inpainting</title>
+    
+    <!-- Test framework -->
+    <script src="https://unpkg.com/mocha@9.2.2/mocha.js"></script>
+    <script src="https://unpkg.com/chai@4.3.6/chai.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/mocha@9.2.2/mocha.css">
+    
+    <!-- Mock and spy framework -->
+    <script src="https://unpkg.com/sinon@14.0.0/pkg/sinon.js"></script>
+    
+    <!-- Application CSS and JS (mocked versions for testing) -->
+    <style>
+        /* Minimal styles for testing */
+        .test-container { margin: 20px; }
+        .waveform-container { width: 800px; height: 100px; background: #f0f0f0; position: relative; }
+        .token-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .token { position: absolute; height: 100%; background: rgba(0, 123, 255, 0.3); border: 1px solid #007bff; }
+        .audio-controls { margin: 20px 0; }
+        .version-controls { margin: 20px 0; }
+        .file-upload { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div id="mocha"></div>
+    
+    <!-- Test DOM elements -->
+    <div id="test-container" class="test-container" style="display: none;">
+        <!-- Audio controls -->
+        <div class="audio-controls">
+            <button id="playPauseBtn">Play</button>
+            <button id="stopBtn">Stop</button>
+            <input type="range" id="volumeSlider" min="0" max="100" value="50">
+            <span id="currentTime">0:00</span> / <span id="totalTime">0:00</span>
+        </div>
+        
+        <!-- Waveform and tokens -->
+        <div class="waveform-container" id="waveformContainer">
+            <canvas id="waveformCanvas" width="800" height="100"></canvas>
+            <div class="token-overlay" id="tokenOverlay"></div>
+        </div>
+        
+        <!-- Token text editor -->
+        <div id="tokenTextEditor">
+            <div id="tokenText">Hello world test</div>
+            <button id="applyEditBtn">Apply Edit</button>
+            <button id="cancelEditBtn">Cancel</button>
+        </div>
+        
+        <!-- Version controls -->
+        <div class="version-controls">
+            <button id="undoBtn" disabled>Undo</button>
+            <button id="redoBtn" disabled>Redo</button>
+            <select id="versionSelect">
+                <option value="0">Original</option>
+            </select>
+        </div>
+        
+        <!-- File upload -->
+        <div class="file-upload">
+            <input type="file" id="audioFileInput" accept="audio/*">
+            <button id="uploadBtn">Upload</button>
+        </div>
+        
+        <!-- Session management -->
+        <div id="sessionInfo">
+            <span id="sessionId"></span>
+            <button id="newSessionBtn">New Session</button>
+            <button id="downloadBtn">Download</button>
+        </div>
+    </div>
+
+    <!-- Mock JavaScript modules (simplified versions for testing) -->
+    <script>
+        // Mock global objects and APIs
+        window.AudioContext = window.AudioContext || function() {
+            return {
+                createGain: () => ({ connect: () => {}, gain: { value: 0.5 } }),
+                createBufferSource: () => ({ 
+                    connect: () => {}, 
+                    start: () => {}, 
+                    stop: () => {},
+                    buffer: null
+                }),
+                decodeAudioData: (buffer) => Promise.resolve({
+                    length: 48000,
+                    sampleRate: 24000,
+                    getChannelData: (channel) => new Float32Array(48000)
+                }),
+                destination: {},
+                currentTime: 0
+            };
+        };
+        
+        // Mock fetch for API calls
+        window.originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+            // Return mock responses based on URL patterns
+            if (url.includes('/api/v2/sessions') && options?.method === 'POST') {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve({
+                        session_id: 'test-session-123',
+                        status: 'created'
+                    })
+                });
+            } else if (url.includes('/api/v2/sessions') && url.includes('/state')) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve({
+                        session_id: 'test-session-123',
+                        text: 'hello world test',
+                        tokens: [
+                            {token_idx: 0, text: 'hello', start_time: 0.0, end_time: 0.5},
+                            {token_idx: 1, text: 'world', start_time: 0.5, end_time: 1.0},
+                            {token_idx: 2, text: 'test', start_time: 1.0, end_time: 1.5}
+                        ],
+                        can_undo: false,
+                        can_redo: false,
+                        current_version_index: 0
+                    })
+                });
+            } else if (url.includes('/api/v2/sessions') && url.includes('/edit')) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve({
+                        session_id: 'test-session-123',
+                        text: 'hello universe test',
+                        can_undo: true,
+                        current_version_index: 1
+                    })
+                });
+            }
+            
+            return Promise.reject(new Error('Unknown API endpoint'));
+        };
+    </script>
+
+    <!-- Application JavaScript modules (simplified for testing) -->
+    <script src="test_modules.js"></script>
+    
+    <!-- Test suites -->
+    <script src="test_ui_controller.js"></script>
+    <script src="test_mvc_controller.js"></script>
+    <script src="test_audio_processor.js"></script>
+    <script src="test_waveform_editor.js"></script>
+    <script src="test_token_editor.js"></script>
+    <script src="test_integration.js"></script>
+
+    <script>
+        // Configure Mocha
+        mocha.setup('bdd');
+        
+        // Run tests after DOM is loaded
+        window.addEventListener('load', function() {
+            mocha.run();
+        });
+    </script>
+</body>
+</html>

@@ -398,7 +398,7 @@
                 try {
                     const formData = new FormData();
                     formData.append('audio', file);
-                    formData.append('device', 'cpu');  // Use CPU for compatibility
+                    formData.append('device', 'cuda');
                     
                     const response = await fetch(`${this.API_BASE}/sessions`, {
                         method: 'POST',

@@ -15,6 +15,7 @@ from src.tokenization import TokenizedAudio, AudioTokenizer
 from src.semantic_edit import EditOperation
 from src.integrated_inpainting import IntegratedVoiceInpainting
 from src.memory_manager import MemoryManager
+from src.aligned_sequences import AlignedTokenSequence, AlignedToken
 
 
 @dataclass
@@ -28,6 +29,9 @@ class TokenStoreVersion:
 
     # Token data
     token_data: TokenizedAudio
+
+    # Aligned sequence for consistent token abstraction
+    aligned_sequence: Optional[AlignedTokenSequence] = None
 
     # Audio path for persistence
     audio_path: Optional[str] = None
@@ -108,6 +112,13 @@ class TokenStore:
         # Store as original and current state
         self.original_state = tokenized_audio
         self.current_state = deepcopy(tokenized_audio)
+        
+        # Create aligned sequence for consistent token abstraction
+        try:
+            self.current_aligned_sequence = AlignedTokenSequence(tokenized_audio)
+        except Exception as e:
+            logger.warning(f"Failed to create aligned sequence: {e}. Using basic implementation.")
+            self.current_aligned_sequence = None
 
         # Save a copy of the original audio
         original_audio_path = self._save_audio(audio_path, "original")
@@ -200,6 +211,9 @@ class TokenStore:
         self._update_state_from_edit(
             edit_op, modified_audio, modified_tokens, generated_regions
         )
+        
+        # Update aligned sequence to maintain consistency
+        self._update_aligned_sequence()
 
         # Save the new version
         description = f"{original_text} → {new_text}"
@@ -298,6 +312,74 @@ class TokenStore:
             Current TokenizedAudio state
         """
         return self.current_state
+    
+    def get_aligned_sequence(self) -> AlignedTokenSequence:
+        """Get the current aligned token sequence
+        
+        Returns:
+            Current AlignedTokenSequence with consistent token abstraction
+        """
+        return self.current_aligned_sequence
+
+    def undo(self):
+        """Undo to the previous version
+        
+        Returns:
+            TokenizedAudio state after undo, or None if at the beginning
+        """
+        if self.current_version_index > 0:
+            self.current_version_index -= 1
+            self.current_state = deepcopy(self.versions[self.current_version_index].token_data)
+            
+            # Update aligned sequence
+            if self.versions[self.current_version_index].aligned_sequence:
+                self.current_aligned_sequence = deepcopy(self.versions[self.current_version_index].aligned_sequence)
+            else:
+                self.current_aligned_sequence = AlignedTokenSequence(self.current_state)
+            
+            logger.info(f"Undone to version: {self.versions[self.current_version_index].label}")
+            return self.current_state
+        else:
+            logger.warning("Cannot undo: already at the first version")
+            return None
+
+    def redo(self):
+        """Redo to the next version
+        
+        Returns:
+            TokenizedAudio state after redo, or None if at the end
+        """
+        if self.current_version_index < len(self.versions) - 1:
+            self.current_version_index += 1
+            self.current_state = deepcopy(self.versions[self.current_version_index].token_data)
+            
+            # Update aligned sequence
+            if self.versions[self.current_version_index].aligned_sequence:
+                self.current_aligned_sequence = deepcopy(self.versions[self.current_version_index].aligned_sequence)
+            else:
+                self.current_aligned_sequence = AlignedTokenSequence(self.current_state)
+            
+            logger.info(f"Redone to version: {self.versions[self.current_version_index].label}")
+            return self.current_state
+        else:
+            logger.warning("Cannot redo: already at the latest version")
+            return None
+
+    def can_undo(self):
+        """Check if undo is possible
+        
+        Returns:
+            True if undo is possible, False otherwise
+        """
+        return self.current_version_index > 0
+
+    def can_redo(self):
+        """Check if redo is possible
+        
+        Returns:
+            True if redo is possible, False otherwise
+        """
+        return self.current_version_index < len(self.versions) - 1
 
     def save_version(
         self, label, description="", modified_token_indices=None, generated_regions=None
@@ -362,6 +444,12 @@ class TokenStore:
 
             # Restore state from version
             self.current_state = deepcopy(self.versions[version_index].token_data)
+            
+            # Restore aligned sequence if available, otherwise recreate
+            if self.versions[version_index].aligned_sequence:
+                self.current_aligned_sequence = deepcopy(self.versions[version_index].aligned_sequence)
+            else:
+                self.current_aligned_sequence = AlignedTokenSequence(self.current_state)
 
             logger.info(f"Restored to version: {self.versions[version_index].label}")
         else:
@@ -464,6 +552,7 @@ class TokenStore:
             label=label,
             timestamp=time.time(),
             token_data=deepcopy(self.current_state),
+            aligned_sequence=deepcopy(self.current_aligned_sequence) if self.current_aligned_sequence else None,
             audio_path=audio_path,
             edit_description=description,
             modified_token_indices=modified_token_indices,
@@ -484,7 +573,7 @@ class TokenStore:
         return version_id
 
     def _get_text_for_token_range(self, start_token_idx, end_token_idx):
-        """Get text for a token range
+        """Get text for a token range using aligned sequence abstraction
 
         Args:
             start_token_idx: Starting token index (inclusive)
@@ -496,68 +585,29 @@ class TokenStore:
         if self.current_state is None:
             raise ValueError("TokenStore not initialized")
 
-        # Initialize empty result
-        result_text = ""
+        # Try aligned sequence first if available
+        if self.current_aligned_sequence is not None:
+            try:
+                return self.current_aligned_sequence.get_text_range(start_token_idx, end_token_idx)
+            except Exception as e:
+                logger.warning(f"Aligned sequence failed for range {start_token_idx}-{end_token_idx}: {e}")
 
-        # Use token_to_text_map to find the text positions
-        if self.current_state.token_to_text_map:
-            # Find the text ranges for each token in the range
-            start_positions = []
-            end_positions = []
+        # Fallback to word timestamps approach
+        if self.current_state.word_timestamps:
+            try:
+                words = []
+                for i, word_info in enumerate(self.current_state.word_timestamps):
+                    if start_token_idx <= i < end_token_idx:
+                        words.append(word_info.get("text", ""))
+                
+                if words:
+                    return " ".join(words)
+            except Exception as e:
+                logger.warning(f"Word timestamps approach failed: {e}")
 
-            for token_idx in range(start_token_idx, end_token_idx):
-                if token_idx in self.current_state.token_to_text_map:
-                    char_idx = self.current_state.token_to_text_map[token_idx]
-                    start_positions.append(char_idx)
-
-                    # Try to find end position from next token
-                    for next_idx in range(token_idx + 1, end_token_idx + 2):
-                        if next_idx in self.current_state.token_to_text_map:
-                            end_positions.append(
-                                self.current_state.token_to_text_map[next_idx]
-                            )
-                            break
-
-            if start_positions:
-                # Get the range of text from min start to max end position
-                min_start = min(start_positions)
-
-                if end_positions:
-                    max_end = max(end_positions)
-                else:
-                    # If no end positions, use the length of the text
-                    max_end = len(self.current_state.text)
-
-                # Extract the text from the current state
-                result_text = self.current_state.text[min_start:max_end]
-
-        # If we couldn't determine the text from the token map, try using word timestamps
-        if not result_text and self.current_state.word_timestamps:
-            # Find words that correspond to the token range
-            words = []
-
-            # Filter word timestamps to those in our token range
-            for word_info in self.current_state.word_timestamps:
-                # This depends on how word_timestamps is structured
-                token_idx = word_info.get("token_idx")
-
-                if (
-                    token_idx is not None
-                    and start_token_idx <= token_idx < end_token_idx
-                ):
-                    words.append(word_info.get("text", ""))
-
-            # Join words with spaces
-            result_text = " ".join(words)
-
-        # If we still have no text, use a placeholder
-        if not result_text:
-            result_text = f"[Tokens {start_token_idx}-{end_token_idx}]"
-            logger.warning(
-                f"Could not determine text for token range {start_token_idx}-{end_token_idx}"
-            )
-
-        return result_text
+        # Final fallback
+        logger.warning(f"Could not determine text for token range {start_token_idx}-{end_token_idx}")
+        return f"[Tokens {start_token_idx}-{end_token_idx}]"
 
     def _apply_edit_operation(self, edit_op):
         """Apply an edit operation to the audio
@@ -725,6 +775,18 @@ class TokenStore:
         torchaudio.save(str(save_path), audio_tensor.cpu(), sample_rate)
 
         return str(save_path)
+    
+    def _update_aligned_sequence(self):
+        """Update the aligned sequence after state changes"""
+        if self.current_state:
+            try:
+                self.current_aligned_sequence = AlignedTokenSequence(self.current_state)
+                logger.debug("Updated aligned sequence after state change")
+            except Exception as e:
+                logger.error(f"Failed to update aligned sequence: {e}")
+                # Keep the previous aligned sequence as fallback
+                if self.current_aligned_sequence is None:
+                    logger.warning("No aligned sequence available, text extraction may be limited")
 
     def cleanup(self):
         """Clean up resources used by the token store"""

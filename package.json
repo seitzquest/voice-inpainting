@@ -1,0 +1,33 @@
+{
+  "name": "voice-inpainting-frontend",
+  "version": "1.0.0",
+  "description": "Frontend testing for Voice Inpainting Application",
+  "scripts": {
+    "test": "python -m pytest tests/ -v",
+    "test-frontend": "echo 'Frontend tests require opening tests/test_frontend.html in a browser'",
+    "test-backend": "python -m pytest tests/test_*.py -v --tb=short",
+    "test-integration": "python -m pytest tests/test_api_mvc.py tests/test_session_manager.py -v",
+    "test-watch": "python -m pytest tests/ -v --tb=short -f",
+    "lint": "echo 'Python linting with ruff would go here'",
+    "dev": "uv run main.py",
+    "start": "uv run main.py"
+  },
+  "devDependencies": {},
+  "dependencies": {},
+  "engines": {
+    "python": ">=3.12,<3.13"
+  },
+  "repository": {
+    "type": "git",
+    "url": "."
+  },
+  "keywords": [
+    "voice",
+    "inpainting", 
+    "audio",
+    "ai",
+    "testing"
+  ],
+  "author": "Philipp Seitz",
+  "license": "MIT"
+}
